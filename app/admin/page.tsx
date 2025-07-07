@@ -12,7 +12,7 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, 
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 // Initialize Firebase if not already initialized
@@ -77,7 +77,7 @@ export default function AdminPage() {
       fetchActiveTimers();
       fetchMessageTemplates(); // Fetch message templates when logged in
     }
-  }, [loggedIn]); 
+  }, [loggedIn]);
 
   // Function to fetch machine configurations
   const fetchMachineConfigs = async () => {
@@ -265,8 +265,8 @@ export default function AdminPage() {
           </h1>
           <p style={{ color: 'var(--text-dark)', marginBottom: '15px', fontSize: '0.9em' }}>จัดการการตั้งค่าเครื่องซักผ้า-อบผ้า และข้อความแจ้งเตือนของร้าน</p> {/* Reduced font size */}
 
-          <button 
-            className="line-button" 
+          <button
+            className="line-button"
             style={{ backgroundColor: 'var(--dark-pink)', marginBottom: '20px', padding: '10px 20px', fontSize: '1em' }} {/* Reduced padding/font size */}
             onClick={() => setLoggedIn(false)} // Logout button
           >
@@ -324,23 +324,23 @@ export default function AdminPage() {
                               style={{ transform: 'scale(1.2)' }}
                             />
                           ) : (
-                            machine.is_active ? 
-                              <span style={{ color: 'var(--line-green)', fontWeight: 'bold' }}>✅</span> : 
+                            machine.is_active ?
+                              <span style={{ color: 'var(--line-green)', fontWeight: 'bold' }}>✅</span> :
                               <span style={{ color: '#dc3545', fontWeight: 'bold' }}>❌</span>
                           )}
                         </td>
                         <td style={{ padding: '8px', textAlign: 'right' }}>
                           {editingMachineId === machine.id ? (
                             <>
-                              <button 
-                                className="line-button" 
+                              <button
+                                className="line-button"
                                 style={{ backgroundColor: 'var(--line-green)', padding: '6px 10px', fontSize: '0.8em', marginRight: '5px' }}
                                 onClick={() => handleSaveMachineClick(machine.id)}
                               >
                                 บันทึก
                               </button>
-                              <button 
-                                className="line-button" 
+                              <button
+                                className="line-button"
                                 style={{ backgroundColor: '#6c757d', padding: '6px 10px', fontSize: '0.8em' }}
                                 onClick={handleCancelMachineEdit}
                               >
@@ -348,8 +348,8 @@ export default function AdminPage() {
                               </button>
                             </>
                           ) : (
-                            <button 
-                              className="line-button" 
+                            <button
+                              className="line-button"
                               style={{ backgroundColor: 'var(--primary-pink)', padding: '6px 10px', fontSize: '0.8em' }}
                               onClick={() => handleEditMachineClick(machine)}
                             >
@@ -393,8 +393,8 @@ export default function AdminPage() {
                         <td style={{ padding: '8px', fontSize: '0.9em' }}>{timer.user_id.substring(0, 8)}...</td>
                         <td style={{ padding: '8px' }}>{new Date(timer.end_time.seconds * 1000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
                         <td style={{ padding: '8px', textAlign: 'right' }}>
-                          <button 
-                            className="line-button" 
+                          <button
+                            className="line-button"
                             style={{ backgroundColor: '#dc3545', padding: '6px 10px', fontSize: '0.8em' }}
                             onClick={() => handleCancelTimer(timer.id, timer.display_name)}
                           >
@@ -448,15 +448,15 @@ export default function AdminPage() {
                         <td style={{ padding: '8px', textAlign: 'right' }}>
                           {editingMessageId === template.docId ? (
                             <>
-                              <button 
-                                className="line-button" 
+                              <button
+                                className="line-button"
                                 style={{ backgroundColor: 'var(--line-green)', padding: '5px 8px', fontSize: '0.7em', marginRight: '5px' }}
                                 onClick={() => handleSaveMessageClick(template.docId)}
                               >
                                 บันทึก
                               </button>
-                              <button 
-                                className="line-button" 
+                              <button
+                                className="line-button"
                                 style={{ backgroundColor: '#6c757d', padding: '5px 8px', fontSize: '0.7em' }}
                                 onClick={handleCancelMessageEdit}
                               >
@@ -464,8 +464,8 @@ export default function AdminPage() {
                               </button>
                             </>
                           ) : (
-                            <button 
-                              className="line-button" 
+                            <button
+                              className="line-button"
                               style={{ backgroundColor: 'var(--primary-pink)', padding: '5px 8px', fontSize: '0.7em' }}
                               onClick={() => handleEditMessageClick(template)}
                             >
@@ -508,8 +508,8 @@ export default function AdminPage() {
             }}
           />
           {error && <p style={{ color: '#dc3545', fontSize: '0.8em', marginBottom: '10px' }}>{error}</p>} {/* Adjusted font size */}
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             className="line-button"
             style={{ backgroundColor: '#007bff', padding: '10px 20px', fontSize: '1em' }} {/* Adjusted padding/font size */}
           >
