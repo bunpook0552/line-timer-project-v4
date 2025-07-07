@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import admin from 'firebase-admin';
-import { doc, updateDoc } from 'firebase/firestore'; // <-- บรรทัดนี้ได้รับการแก้ไขแล้ว!
 
 // --- ส่วนเริ่มต้นการเชื่อมต่อ Firebase Admin SDK (สำหรับหลังบ้าน) ---
 if (!admin.apps.length) {
@@ -9,7 +8,9 @@ if (!admin.apps.length) {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
-  } catch (e) { console.error("Firebase Admin initialization error:", e); }
+  } catch (e) {
+    console.error("Firebase Admin initialization error:", e);
+  }
 }
 const db = admin.firestore();
 // --- สิ้นสุดส่วนการเชื่อมต่อ ---
@@ -23,15 +24,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Path to the specific timer document: stores/storeId/timers/timerId
-    const timerRef = db.collection('stores').doc(storeId).collection('timers').doc(timerId);
+    const timerRef = db
+      .collection('stores')
+      .doc(storeId)
+      .collection('timers')
+      .doc(timerId);
 
-    await updateDoc(timerRef, {
+    await timerRef.update({
       status: 'cancelled', // เปลี่ยนสถานะเป็น 'cancelled'
       cancelled_at: admin.firestore.FieldValue.serverTimestamp(), // บันทึกเวลาที่ยกเลิก
     });
 
     return NextResponse.json({ message: `Timer ${timerId} cancelled successfully for store ${storeId}` });
-
   } catch (error) {
     console.error("Error cancelling timer:", error);
     return NextResponse.json({ message: "Failed to cancel timer." }, { status: 500 });
