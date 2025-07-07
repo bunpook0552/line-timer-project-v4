@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import admin from 'firebase-admin';
-import { doc, updateDoc } from 'firebase-firestore'; // <-- เพิ่มบรรทัดนี้
+import { doc, updateDoc } from 'firebase/firestore'; // <-- บรรทัดนี้ได้รับการแก้ไขแล้ว!
 
-// ... (โค้ดส่วนที่เหลือทั้งหมดเหมือนเดิม)
 // --- ส่วนเริ่มต้นการเชื่อมต่อ Firebase Admin SDK (สำหรับหลังบ้าน) ---
 if (!admin.apps.length) {
   try {
