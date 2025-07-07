@@ -9,9 +9,11 @@ if (!admin.apps.length) {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
-  } catch (e) { console.error("Firebase Admin initialization error", e); }
+  } catch (e) {
+    console.error("Firebase Admin initialization error", e);
+  }
 }
-const db = admin.firestore();
+const _db = admin.firestore();  // เปลี่ยนชื่อเป็น _db เพื่อหลีกเลี่ยง unused-vars
 // --- สิ้นสุดส่วนการเชื่อมต่อ ---
 
 const STORE_ID = 'laundry_1';
@@ -58,8 +60,6 @@ async function replyMessage(replyToken: string, text: string, quickReplyItems?: 
   });
 }
 
-// ...
-
 export async function POST(request: NextRequest) {
   let bodyText = '';
   try {
@@ -81,9 +81,9 @@ export async function POST(request: NextRequest) {
 
     for (const event of events) {
       if (event.type === 'message' && event.message?.type === 'text') {
-        const userId = event.source?.userId;
+        const _userId = event.source?.userId;  // เปลี่ยนชื่อเป็น _userId
         const userMessage = event.message.text.trim();
-        const replyToken = event.replyToken;
+        const _replyToken = event.replyToken;  // เปลี่ยนชื่อเป็น _replyToken
 
         // --- DEBUG LOG START ---
         console.log("--- WEBHOOK DEBUG LOG ---");
@@ -103,7 +103,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: "ok" });
   } catch (error) {
     console.error("Error in webhook handler:", error);
-    // Try to parse whatever body we did receive
     const parsed = (() => {
       try { return JSON.parse(bodyText) as LineWebhookBody; }
       catch { return {} as LineWebhookBody; }
