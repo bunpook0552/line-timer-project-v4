@@ -40,3 +40,9 @@ a {
     color-scheme: dark;
   }
 }
+```css
+        /* --- Admin Page Styles (Optional, for basic layout) --- */
+        /* This is a simple card and container already defined in your CSS */
+        /* You can add more specific styles for admin form if needed */
+        ```
+        (จริงๆ แล้วในโค้ด `page.tsx` ของ Admin ผมได้ใส่ `style` แบบง่ายๆ เข้าไปโดยตรงแล้วครับ ดังนั้นคุณไม่จำเป็นต้องเพิ่ม CSS ใหม่ใน `globals.css` ในขั้นตอนนี้ก็ได้ครับ แค่ทราบว่าหากต้องการปรับแต่งหน้าตาเพิ่มเติมในอนาคต จะมาเพิ่มที่นี่ครับ)
