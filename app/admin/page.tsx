@@ -279,7 +279,7 @@ export default function AdminPage() {
 
           {/* Machine Configurations Section */}
           <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
-            <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🔧</span>
+            <span style={{ fontSize: '1.2em', vertical-align: 'middle', marginRight: '5px' }}>🔧</span>
             การตั้งค่าเครื่องจักร
           </h2>
           {loadingMachines ? (
