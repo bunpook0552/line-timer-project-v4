@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
         // === สิ้นสุดการย้าย (นี่คือส่วนที่แก้ไข scope ของ replyToken) ===
 
         const requestedMachineId = parseInt(userMessage, 10); 
-        
+
         // --- DEBUG LOG START ---
         console.log("--- WEBHOOK DEBUG LOG ---");
         console.log("Received message for machine ID:", requestedMachineId);
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
             await replyMessage(replyToken, `ขออภัยค่ะ 🙏\nเครื่อง ${displayName} กำลังปิดใช้งานอยู่ค่ะ`);
             return NextResponse.json({ status: "ok, machine inactive" });
         }
-        
+
         // === ตรวจสอบสถานะเครื่องว่าง/ไม่ว่าง ===
         const existingTimersQuery = await db.collection('stores').doc(STORE_ID).collection('timers')
           .where('machine_id', '==', machineId)
