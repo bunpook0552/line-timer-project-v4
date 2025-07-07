@@ -15,8 +15,7 @@ const db = admin.firestore();
 // --- สิ้นสุดส่วนการเชื่อมต่อ ---
 
 // === กำหนด ID ร้านค้า (สำหรับร้านแรก) ===
-// ใช้ Store ID ที่คุณกำหนดใน Firebase Console Collection 'stores'
-const STORE_ID = 'laundry_1'; 
+const STORE_ID = 'laundry_1'; // <--- ต้องตรงกับ Document ID ของร้านใน Firebase
 
 // ฟังก์ชันสำหรับส่งข้อความตอบกลับไปหาผู้ใช้
 async function replyMessage(replyToken: string, text: string) {
@@ -60,14 +59,22 @@ export async function POST(request: NextRequest) {
         const userId = event.source.userId;
         const userMessage = event.message.text.trim();
         const replyToken = event.replyToken;
-        const requestedMachineId = parseInt(userMessage, 10); // ID ที่ลูกค้าพิมพ์มา
+        const requestedMachineId = parseInt(userMessage, 10); 
+
+        // --- DEBUG LOG START ---
+        console.log("--- WEBHOOK DEBUG LOG ---");
+        console.log("Received message for machine ID:", requestedMachineId);
+        console.log("Using STORE_ID:", STORE_ID);
+        // --- DEBUG LOG END ---
 
         // === ดึงข้อมูลการตั้งค่าเครื่องจาก Firestore (ตาม Store ID) ===
         const machineConfigRef = db.collection('stores').doc(STORE_ID).collection('machine_configs');
         const machineConfigsSnapshot = await machineConfigRef.where('machine_id', '==', requestedMachineId).limit(1).get();
 
         if (machineConfigsSnapshot.empty) {
-          // ถ้าไม่พบหมายเลขเครื่องที่ตรงกันในฐานข้อมูลสำหรับร้านนี้
+          // --- DEBUG LOG START ---
+          console.log("Machine config not found for ID:", requestedMachineId);
+          // --- DEBUG LOG END ---
           await replyMessage(replyToken, 'ขออภัยค่ะ ไม่พบหมายเลขเครื่องที่คุณระบุ กรุณาพิมพ์เฉพาะตัวเลขของเครื่องที่เปิดใช้งานค่ะ');
           return NextResponse.json({ status: "ok, machine not found" });
         }
@@ -75,24 +82,30 @@ export async function POST(request: NextRequest) {
         const machineConfigData = machineConfigsSnapshot.docs[0].data();
         const machineId = machineConfigData.machine_id;
         const duration = machineConfigData.duration_minutes;
-        const machineType = machineConfigData.machine_type; // 'washer' or 'dryer'
+        const machineType = machineConfigData.machine_type; 
         const displayName = machineConfigData.display_name;
 
+        // --- DEBUG LOG START ---
+        console.log("Fetched machine config data:");
+        console.log("  machineId:", machineId);
+        console.log("  duration (from DB):", duration);
+        console.log("  machineType:", machineType);
+        console.log("  displayName:", displayName);
+        console.log("  is_active:", machineConfigData.is_active);
+        // --- DEBUG LOG END ---
+
         if (!machineConfigData.is_active) {
-            // ถ้าเครื่องถูกตั้งค่าให้ "ปิดใช้งาน" ในหน้า Admin
             await replyMessage(replyToken, `ขออภัยค่ะ 🙏\nเครื่อง ${displayName} กำลังปิดใช้งานอยู่ค่ะ`);
             return NextResponse.json({ status: "ok, machine inactive" });
         }
-        
+
         // === ตรวจสอบสถานะเครื่องว่าง/ไม่ว่าง ===
-        // การเก็บ timers จะอยู่ภายใต้ Store ID
         const existingTimersQuery = await db.collection('stores').doc(STORE_ID).collection('timers')
           .where('machine_id', '==', machineId)
           .where('status', '==', 'pending')
           .get(); 
 
         if (!existingTimersQuery.empty) {
-          // ถ้าเจอว่ามีคนใช้อยู่ (เครื่องไม่ว่าง)
           await replyMessage(replyToken, `ขออภัยค่ะ 🙏\nเครื่อง ${displayName} กำลังใช้งานอยู่ค่ะ`);
           return NextResponse.json({ status: "ok, machine is busy" });
         }
@@ -111,13 +124,12 @@ export async function POST(request: NextRequest) {
           status: 'pending',
         });
 
-        // ส่งข้อความตอบกลับเพื่อยืนยัน
+        // ส่งข้อความตอบกลับเพื่อยืนยัน (ใช้ duration และ displayName จากฐานข้อมูล)
         await replyMessage(replyToken, `รับทราบค่ะ! ✅\nเริ่มจับเวลา ${duration} นาทีสำหรับ ${displayName} แล้วค่ะ`);
 
       } else {
-        // ถ้าข้อความที่พิมพ์มาไม่ถูกต้อง (ไม่ใช่ตัวเลขของเครื่องที่พบใน DB)
         const contactMessage = "ขออภัยค่ะ บอทสามารถตั้งเวลาได้จากตัวเลขของเครื่องเท่านั้นค่ะ 🙏\n\nหากต้องการติดต่อเจ้าหน้าที่โดยตรง กรุณาติดต่อที่:\nโทร: 08x-xxx-xxxx\nหรือที่หน้าเคาน์เตอร์ได้เลยค่ะ";
-        await replyMessage(replyToken, contactMessage);
+        await replyMessage(replyMessage, contactMessage); // แก้ไขเป็น replyToken
       }
     }
     return NextResponse.json({ status: "ok" });
