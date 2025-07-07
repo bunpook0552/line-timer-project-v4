@@ -119,7 +119,6 @@ export default function AdminPage() {
         ...doc.data()
       })) as ActiveTimer[];
 
-      // Sort by end time
       timerList.sort((a, b) => {
         const dateA = new Date(a.end_time.seconds * 1000 + a.end_time.nanoseconds / 1000000);
         const dateB = new Date(b.end_time.seconds * 1000 + b.end_time.nanoseconds / 1000000);
@@ -368,7 +367,7 @@ export default function AdminPage() {
 
           {/* Active Timers Section */}
           <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
-            <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>⏱️</span>
+            <span style={{ fontSize: '1.2em', vertical-align: 'middle', marginRight: '5px' }}>⏱️</span>
             รายการเครื่องที่กำลังทำงาน
           </h2>
           {loadingTimers ? (
