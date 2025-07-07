@@ -5,15 +5,6 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 
 // === กำหนดค่า Firebase (ใช้ของโปรเจกต์คุณ) ===
-// ตรวจสอบว่าได้ตั้งค่า Environment Variables ใน Vercel แล้ว:
-// NEXT_PUBLIC_FIREBASE_API_KEY
-// NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
-// NEXT_PUBLIC_FIREBASE_PROJECT_ID
-// NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-// NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
-// NEXT_PUBLIC_FIREBASE_APP_ID
-// NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID (ถ้ามี)
-
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -46,12 +37,25 @@ interface MachineConfig {
   display_name: string;
 }
 
+interface ActiveTimer {
+  id: string; // Document ID from Firestore (timers collection)
+  user_id: string;
+  machine_id: number;
+  machine_type: 'washer' | 'dryer';
+  display_name: string;
+  duration_minutes: number;
+  end_time: any; // Firestore Timestamp
+  status: string;
+}
+
 export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [loggedIn, setLoggedIn] = useState(false);
   const [error, setError] = useState('');
   const [machines, setMachines] = useState<MachineConfig[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]); // New state for active timers
+  const [loadingMachines, setLoadingMachines] = useState(true); // Changed name
+  const [loadingTimers, setLoadingTimers] = useState(true); // New loading state for timers
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState({ duration_minutes: 0, is_active: false });
 
@@ -60,36 +64,57 @@ export default function AdminPage() {
   useEffect(() => {
     if (loggedIn) {
       fetchMachineConfigs();
+      fetchActiveTimers(); // Fetch active timers when logged in
     }
-  }, [loggedIn]); // Fetch data when logged in status changes
+  }, [loggedIn]); 
 
+  // Function to fetch machine configurations
   const fetchMachineConfigs = async () => {
-    setLoading(true);
+    setLoadingMachines(true);
     try {
-      // Path to machine_configs: stores/STORE_ID/machine_configs
       const machineConfigsCol = collection(db, 'stores', STORE_ID, 'machine_configs');
       const machineSnapshot = await getDocs(machineConfigsCol);
       const machineList = machineSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as MachineConfig[];
-      // Sort machines for consistent display
       machineList.sort((a, b) => {
-          // Sort by type (washer first, then dryer)
-          if (a.machine_type === 'washer' && b.machine_type === 'dryer') return -1;
-          if (a.machine_type === 'dryer' && b.machine_type === 'washer') return 1;
-          // Then sort by machine_id
-          return a.machine_id - b.machine_id;
+          if (a.machine_type === b.machine_type) {
+              return a.machine_id - b.machine_id;
+          }
+          return a.machine_type.localeCompare(b.machine_type);
       });
       setMachines(machineList);
     } catch (err) {
       console.error("Error fetching machine configs:", err);
-      setError("ไม่สามารถดึงข้อมูลเครื่องได้");
+      setError("ไม่สามารถดึงข้อมูลการตั้งค่าเครื่องได้");
     } finally {
-      setLoading(false);
+      setLoadingMachines(false);
     }
   };
 
+  // Function to fetch active timers
+  const fetchActiveTimers = async () => {
+    setLoadingTimers(true);
+    try {
+      const timersCol = collection(db, 'stores', STORE_ID, 'timers');
+      const activeTimersSnapshot = await getDocs(timersCol.where('status', '==', 'pending'));
+      const timerList = activeTimersSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as ActiveTimer[];
+      // Sort by end time
+      timerList.sort((a, b) => a.end_time.toDate().getTime() - b.end_time.toDate().getTime());
+      setActiveTimers(timerList);
+    } catch (err) {
+      console.error("Error fetching active timers:", err);
+      setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
+    } finally {
+      setLoadingTimers(false);
+    }
+  };
+
+  // Function to handle login
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (password === ADMIN_PASSWORD) {
@@ -101,6 +126,7 @@ export default function AdminPage() {
     }
   };
 
+  // Function to handle edit machine config click
   const handleEditClick = (machine: MachineConfig) => {
     setEditingId(machine.id);
     setEditFormData({
@@ -109,6 +135,7 @@ export default function AdminPage() {
     });
   };
 
+  // Function to handle saving machine config
   const handleSaveClick = async (machineId: string) => {
     try {
       const machineRef = doc(db, 'stores', STORE_ID, 'machine_configs', machineId);
@@ -124,14 +151,42 @@ export default function AdminPage() {
     }
   };
 
+  // Function to handle cancelling edit
   const handleCancelClick = () => {
     setEditingId(null);
+  };
+
+  // === NEW: Function to handle cancelling an active timer ===
+  const handleCancelTimer = async (timerId: string, machineDisplayName: string) => {
+    if (window.confirm(`คุณแน่ใจหรือไม่ที่จะยกเลิกการจับเวลาของ ${machineDisplayName} (ID: ${timerId})?`)) {
+      try {
+        // Call a new backend API to update the timer status
+        const response = await fetch('/api/admin/timers/cancel', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ timerId, storeId: STORE_ID }),
+        });
+
+        if (response.ok) {
+            alert(`ยกเลิกการจับเวลาของ ${machineDisplayName} เรียบร้อยแล้ว`);
+            await fetchActiveTimers(); // Refresh active timers
+        } else {
+            const errorData = await response.json();
+            alert(`ไม่สามารถยกเลิกได้: ${errorData.message || 'เกิดข้อผิดพลาด'}`);
+        }
+      } catch (err) {
+        console.error("Error cancelling timer:", err);
+        alert("เกิดข้อผิดพลาดในการยกเลิกการจับเวลา");
+      }
+    }
   };
 
   // --- Admin Page Content (after login) ---
   if (loggedIn) {
     return (
-      <div className="container" style={{ maxWidth: '800px', padding: '30px', margin: '20px auto' }}>
+      <div className="container" style={{ maxWidth: '900px', padding: '30px', margin: '20px auto' }}>
         <div className="card">
           <h1 style={{ color: 'var(--primary-pink)' }}>
             <span style={{ fontSize: '1.5em', verticalAlign: 'middle', marginRight: '10px' }}>⚙️</span>
@@ -150,7 +205,12 @@ export default function AdminPage() {
 
           {error && <p style={{ color: '#dc3545', marginBottom: '15px', fontWeight: 'bold' }}>{error}</p>}
 
-          {loading ? (
+          {/* Machine Configurations Section */}
+          <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
+            <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🔧</span>
+            การตั้งค่าเครื่องจักร
+          </h2>
+          {loadingMachines ? (
             <p>กำลังโหลดข้อมูลเครื่องจักร...</p>
           ) : (
             <div className="machine-list" style={{ textAlign: 'left' }}>
@@ -224,6 +284,50 @@ export default function AdminPage() {
                               แก้ไข
                             </button>
                           )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {/* Active Timers Section */}
+          <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
+            <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>⏱️</span>
+            รายการเครื่องที่กำลังทำงาน
+          </h2>
+          {loadingTimers ? (
+            <p>กำลังโหลดรายการที่กำลังทำงาน...</p>
+          ) : (
+            <div className="active-timers-list" style={{ textAlign: 'left' }}>
+              {activeTimers.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#777' }}>ไม่มีเครื่องใดกำลังทำงานอยู่</p>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เริ่มโดย</th>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เสร็จใน</th>
+                      <th style={{ padding: '10px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeTimers.map(timer => (
+                      <tr key={timer.id} style={{ borderBottom: '1px dashed #eee' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold' }}>{timer.display_name} ({timer.duration_minutes} นาที)</td>
+                        <td style={{ padding: '10px', fontSize: '0.9em' }}>{timer.user_id.substring(0, 8)}...</td> {/* Show truncated User ID */}
+                        <td style={{ padding: '10px' }}>{new Date(timer.end_time.seconds * 1000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
+                        <td style={{ padding: '10px', textAlign: 'right' }}>
+                          <button 
+                            className="line-button" 
+                            style={{ backgroundColor: '#dc3545', padding: '8px 12px', fontSize: '0.9em' }}
+                            onClick={() => handleCancelTimer(timer.id, timer.display_name)}
+                          >
+                            ยกเลิกการจับเวลา
+                          </button>
                         </td>
                       </tr>
                     ))}
