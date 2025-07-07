@@ -11,18 +11,18 @@ if (!admin.apps.length) {
     });
   } catch (e) { console.error("Firebase Admin initialization error", e); }
 }
-const db = admin.firestore(); // eslint-disable-line no-unused-vars
+const db = admin.firestore();
 // --- สิ้นสุดส่วนการเชื่อมต่อ ---
 
 // === กำหนด ID ร้านค้า (สำหรับร้านแรก) ===
 const STORE_ID = 'laundry_1'; 
 
 // ฟังก์ชันสำหรับส่งข้อความตอบกลับพร้อมปุ่ม Quick Reply
-async function replyMessage(replyToken: string, text: string, quickReplyItems?: any[]) {
+async function replyMessage(replyToken: string, text: string, quickReplyItems?: Array<Record<string, any>>) { // แก้ไข 'any[]' เป็น Array<Record<string, any>> หรือปรับตามโครงสร้าง quickReplyItems
   const replyUrl = 'https://api.line.me/v2/bot/message/reply';
   const accessToken = process.env.LINE_MESSAGING_TOKEN!;
   
-  let messagePayload: any = {
+  const messagePayload: Record<string, any> = { // แก้ไข let เป็น const และ 'any' เป็น Record<string, any>
     replyToken: replyToken,
     messages: [{ type: 'text', text: text }],
   };
@@ -92,9 +92,9 @@ export async function POST(request: NextRequest) {
     const events = JSON.parse(body).events;
     for (const event of events) {
       if (event.type === 'message' && event.message.type === 'text') {
-        const userId = event.source.userId; // eslint-disable-line no-unused-vars
+        const userId = event.source.userId; 
         const userMessage = event.message.text.trim();
-        const replyToken = event.replyToken; // eslint-disable-line no-unused-vars
+        const replyToken = event.replyToken; 
 
         // --- DEBUG LOG START ---
         console.log("--- WEBHOOK DEBUG LOG ---");
