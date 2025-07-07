@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, collection, getDocs, doc, updateDoc, query, where, addDoc } from 'firebase/firestore';
+// === FIX #3: นำเข้า deleteDoc ===
+import { getFirestore, collection, getDocs, doc, updateDoc, query, where, addDoc, deleteDoc } from 'firebase/firestore';
 
 // === กำหนดค่า Firebase (ใช้ของโปรเจกต์คุณ) ===
 const firebaseConfig = {
@@ -68,8 +69,6 @@ export default function AdminPage() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editMachineFormData, setEditMachineFormData] = useState({ duration_minutes: 0, is_active: false });
   const [editMessageFormData, setEditMessageFormData] = useState('');
-
-  // === FIX #2: ประกาศ State ที่ขาดไปสำหรับฟอร์ม "เพิ่มเครื่องใหม่" ===
   const [addingNewMachine, setAddingNewMachine] = useState(false);
   const [newMachineFormData, setNewMachineFormData] = useState({
     machine_id: '',
@@ -89,7 +88,6 @@ export default function AdminPage() {
     }
   }, [loggedIn]);
 
-  // Function to fetch machine configurations
   const fetchMachineConfigs = async () => {
     setLoadingMachines(true);
     try {
@@ -114,7 +112,6 @@ export default function AdminPage() {
     }
   };
 
-  // Function to fetch active timers
   const fetchActiveTimers = async () => {
     setLoadingTimers(true);
     try {
@@ -151,7 +148,6 @@ export default function AdminPage() {
     }
   };
 
-  // === NEW: Function to fetch message templates ===
   const fetchMessageTemplates = async () => {
     setLoadingMessages(true);
     try {
@@ -182,7 +178,6 @@ export default function AdminPage() {
     }
   };
 
-  // Function to handle edit machine config click
   const handleEditMachineClick = (machine: MachineConfig) => {
     setEditingMachineId(machine.id);
     setEditMachineFormData({
@@ -191,7 +186,6 @@ export default function AdminPage() {
     });
   };
 
-  // Function to handle saving machine config
   const handleSaveMachineClick = async (machineDocId: string) => {
     try {
       const machineRef = doc(db, 'stores', STORE_ID, 'machine_configs', machineDocId);
@@ -206,13 +200,26 @@ export default function AdminPage() {
       setError("ไม่สามารถบันทึกการเปลี่ยนแปลงได้");
     }
   };
+  
+  // === FIX #1: เพิ่มฟังก์ชันสำหรับลบเครื่องจักร ===
+  const handleDeleteMachine = async (machineDocId: string, machineDisplayName: string) => {
+    if (window.confirm(`คุณแน่ใจหรือไม่ที่จะลบเครื่อง "${machineDisplayName}" ออกจากระบบ? การกระทำนี้ไม่สามารถย้อนกลับได้`)) {
+      try {
+        const machineRef = doc(db, 'stores', STORE_ID, 'machine_configs', machineDocId);
+        await deleteDoc(machineRef);
+        alert(`ลบเครื่อง ${machineDisplayName} เรียบร้อยแล้ว`);
+        await fetchMachineConfigs(); // โหลดข้อมูลใหม่
+      } catch (err) {
+        console.error("Error deleting machine:", err);
+        setError("เกิดข้อผิดพลาดในการลบเครื่องจักร");
+      }
+    }
+  };
 
-  // Function to handle cancelling machine edit
   const handleCancelMachineEdit = () => {
     setEditingMachineId(null);
   };
 
-  // Function to handle cancelling an active timer
   const handleCancelTimer = async (timerId: string, machineDisplayName: string) => {
     if (window.confirm(`คุณแน่ใจหรือไม่ที่จะยกเลิกการจับเวลาของ ${machineDisplayName} (ID: ${timerId})?`)) {
       try {
@@ -238,7 +245,6 @@ export default function AdminPage() {
     }
   };
 
-  // === NEW: Function to add new machine ===
   const handleAddMachineClick = () => {
     setAddingNewMachine(true);
     setNewMachineFormData({
@@ -295,10 +301,6 @@ export default function AdminPage() {
     setAddingNewMachine(false);
   };
 
-  // === FIX #1: ลบฟังก์ชัน handleCancelTimer ที่ซ้ำซ้อนออกไปแล้ว ===
-  // The duplicate function that was here has been removed.
-
-  // === NEW: Message Template Management Functions ===
   const handleEditMessageClick = (template: MessageTemplate) => {
     setEditingMessageId(template.docId);
     setEditMessageFormData(template.text);
@@ -322,7 +324,6 @@ export default function AdminPage() {
     setEditingMessageId(null);
   };
 
-  // --- Admin Page Content (after login) ---
   if (loggedIn) {
     return (
       <div className="container" style={{ maxWidth: '100%', padding: '10px', margin: '10px auto' }}>
@@ -344,7 +345,6 @@ export default function AdminPage() {
 
           {error && <p style={{ color: '#dc3545', marginBottom: '15px', fontWeight: 'bold', fontSize: '0.9em' }}>{error}</p>}
 
-          {/* Machine Configurations Section */}
           <h2 style={{ color: 'var(--dark-pink)', marginTop: '20px', marginBottom: '15px', fontSize: '1.4em' }}>
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🔧</span>
             การตั้งค่าเครื่องจักร
@@ -416,13 +416,23 @@ export default function AdminPage() {
                               </button>
                             </>
                           ) : (
-                            <button
-                              className="line-button"
-                              style={{ backgroundColor: 'var(--primary-pink)', padding: '5px 8px', fontSize: '0.8em' }}
-                              onClick={() => handleEditMachineClick(machine)}
-                            >
-                              แก้ไข
-                            </button>
+                            // === FIX #2: เพิ่มปุ่ม "แก้ไข" และ "ลบ" ===
+                            <div style={{display: 'flex', gap: '5px', justifyContent: 'flex-end'}}>
+                                <button
+                                  className="line-button"
+                                  style={{ backgroundColor: 'var(--primary-pink)', padding: '5px 8px', fontSize: '0.8em' }}
+                                  onClick={() => handleEditMachineClick(machine)}
+                                >
+                                  แก้ไข
+                                </button>
+                                <button
+                                  className="line-button"
+                                  style={{ backgroundColor: '#dc3545', padding: '5px 8px', fontSize: '0.8em' }}
+                                  onClick={() => handleDeleteMachine(machine.id, machine.display_name)}
+                                >
+                                  ลบ
+                                </button>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -462,7 +472,6 @@ export default function AdminPage() {
                 type="number"
                 placeholder="เช่น 25, 40"
                 value={newMachineFormData.duration_minutes}
-                // === FIX #3: แก้ไข onChange ให้ถูกต้อง ===
                 onChange={(e) => setNewMachineFormData({ ...newMachineFormData, duration_minutes: e.target.value })}
                 style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
               />
