@@ -118,18 +118,22 @@ export default function AdminPage() {
       });
       
       setActiveTimers(timerList);
-    } catch (err) {
-      console.error("Error fetching active timers:", err);
-      // เพิ่มการจัดการ Error เฉพาะสำหรับ Index
-      if ((err as any).code === 'failed-precondition' && (err as any).details?.includes('requires an index')) {
-        setError("Firebase Index สำหรับรายการที่กำลังทำงานยังไม่ถูกสร้าง กรุณาสร้างตามคำแนะนำใน Console Log");
-      } else {
-        setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
-      }
-    } finally {
-      setLoadingTimers(false);
+} catch (err: unknown) { // ระบุว่าเป็น unknown
+  console.error("Error fetching active timers:", err);
+  // เพิ่มการจัดการ Error เฉพาะสำหรับ Index
+  if (typeof err === 'object' && err !== null && 'code' in err && 'details' in err) {
+    const firebaseError = err as { code: string, details: string }; // Cast to known structure
+    if (firebaseError.code === 'failed-precondition' && firebaseError.details.includes('requires an index')) {
+      setError("Firebase Index สำหรับรายการที่กำลังทำงานยังไม่ถูกสร้าง กรุณาสร้างตามคำแนะนำใน Console Log");
+    } else {
+      setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
     }
-  };
+  } else {
+    setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
+  }
+} finally {
+  setLoadingTimers(false);
+}
 
   // Function to handle login
   const handleLogin = (e: React.FormEvent) => {
