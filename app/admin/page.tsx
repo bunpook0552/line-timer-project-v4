@@ -12,7 +12,7 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, // ตรวจสอบว่ามีค่านี้ด้วย
 };
 
 // Initialize Firebase if not already initialized
@@ -44,7 +44,8 @@ interface ActiveTimer {
   machine_type: 'washer' | 'dryer';
   display_name: string;
   duration_minutes: number;
-  end_time: any; // Firestore Timestamp
+  // แก้ไข end_time ให้ตรงกับโครงสร้างที่ Firestore ส่งมา (seconds, nanoseconds)
+  end_time: { seconds: number; nanoseconds: number; }; 
   status: string;
 }
 
@@ -54,7 +55,7 @@ export default function AdminPage() {
   const [error, setError] = useState('');
   const [machines, setMachines] = useState<MachineConfig[]>([]);
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]); // New state for active timers
-  const [loadingMachines, setLoadingMachines] = useState(true); // Changed name
+  const [loadingMachines, setLoadingMachines] = useState(true); 
   const [loadingTimers, setLoadingTimers] = useState(true); // New loading state for timers
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState({ duration_minutes: 0, is_active: false });
@@ -98,17 +99,33 @@ export default function AdminPage() {
     setLoadingTimers(true);
     try {
       const timersCol = collection(db, 'stores', STORE_ID, 'timers');
-      const activeTimersSnapshot = await getDocs(timersCol.where('status', '==', 'pending'));
+      // แก้ไขการ Query: ถ้าคุณเจอ Error 9 FAILED_PRECONDITION: The query requires an index.
+      // ให้ไปที่ Firebase Console -> Firestore Database -> Indexes
+      // แล้วสร้าง Composite Index สำหรับ Collection Group 'timers' ที่มี Field path: status (Ascending) และ end_time (Ascending)
+      const activeTimersSnapshot = await getDocs(timersCol.where('status', '==', 'pending')); 
+      
       const timerList = activeTimersSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as ActiveTimer[];
+
       // Sort by end time
-      timerList.sort((a, b) => a.end_time.toDate().getTime() - b.end_time.toDate().getTime());
+      timerList.sort((a, b) => {
+        // Convert to Date objects from Firestore Timestamp structure before comparison
+        const dateA = new Date(a.end_time.seconds * 1000 + a.end_time.nanoseconds / 1000000);
+        const dateB = new Date(b.end_time.seconds * 1000 + b.end_time.nanoseconds / 1000000);
+        return dateA.getTime() - dateB.getTime();
+      });
+      
       setActiveTimers(timerList);
     } catch (err) {
       console.error("Error fetching active timers:", err);
-      setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
+      // เพิ่มการจัดการ Error เฉพาะสำหรับ Index
+      if ((err as any).code === 'failed-precondition' && (err as any).details?.includes('requires an index')) {
+        setError("Firebase Index สำหรับรายการที่กำลังทำงานยังไม่ถูกสร้าง กรุณาสร้างตามคำแนะนำใน Console Log");
+      } else {
+        setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
+      }
     } finally {
       setLoadingTimers(false);
     }
