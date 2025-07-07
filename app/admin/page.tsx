@@ -60,14 +60,14 @@ export default function AdminPage() {
   const [error, setError] = useState('');
   const [machines, setMachines] = useState<MachineConfig[]>([]);
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
-  const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([]); // New state for message templates
+  const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([]);
   const [loadingMachines, setLoadingMachines] = useState(true);
   const [loadingTimers, setLoadingTimers] = useState(true);
-  const [loadingMessages, setLoadingMessages] = useState(true); // New loading state for messages
-  const [editingMachineId, setEditingMachineId] = useState<string | null>(null); // Renamed for clarity
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null); // New editing state for messages
-  const [editMachineFormData, setEditMachineFormData] = useState({ duration_minutes: 0, is_active: false }); // Renamed for clarity
-  const [editMessageFormData, setEditMessageFormData] = useState(''); // New editing state for messages
+  const [loadingMessages, setLoadingMessages] = useState(true);
+  const [editingMachineId, setEditingMachineId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editMachineFormData, setEditMachineFormData] = useState({ duration_minutes: 0, is_active: false });
+  const [editMessageFormData, setEditMessageFormData] = useState('');
 
   const STORE_ID = 'laundry_1'; // <--- กำหนด ID ร้านค้าของคุณที่นี่ (ใช้สำหรับร้านแรก)
 
@@ -75,7 +75,7 @@ export default function AdminPage() {
     if (loggedIn) {
       fetchMachineConfigs();
       fetchActiveTimers();
-      fetchMessageTemplates(); // Fetch message templates when logged in
+      fetchMessageTemplates();
     }
   }, [loggedIn]);
 
@@ -109,21 +109,17 @@ export default function AdminPage() {
     setLoadingTimers(true);
     try {
       const timersCol = collection(db, 'stores', STORE_ID, 'timers');
-
       const q = query(timersCol, where('status', '==', 'pending'));
       const activeTimersSnapshot = await getDocs(q);
-
       const timerList = activeTimersSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as ActiveTimer[];
-
       timerList.sort((a, b) => {
         const dateA = new Date(a.end_time.seconds * 1000 + a.end_time.nanoseconds / 1000000);
         const dateB = new Date(b.end_time.seconds * 1000 + b.end_time.nanoseconds / 1000000);
         return dateA.getTime() - dateB.getTime();
       });
-
       setActiveTimers(timerList);
     } catch (err: unknown) {
       console.error("Error fetching active timers:", err);
@@ -142,17 +138,16 @@ export default function AdminPage() {
     }
   };
 
-  // === NEW: Function to fetch message templates ===
+  // Function to fetch message templates
   const fetchMessageTemplates = async () => {
     setLoadingMessages(true);
     try {
       const templatesCol = collection(db, 'stores', STORE_ID, 'message_templates');
       const templateSnapshot = await getDocs(templatesCol);
       const templateList = templateSnapshot.docs.map(doc => ({
-        docId: doc.id, // Store Firestore's document ID
+        docId: doc.id,
         ...doc.data()
       })) as MessageTemplate[];
-      // Sort alphabetically by custom 'id' for consistent display
       templateList.sort((a, b) => a.id.localeCompare(b.id));
       setMessageTemplates(templateList);
     } catch (err) {
@@ -174,7 +169,6 @@ export default function AdminPage() {
     }
   };
 
-  // Function to handle edit machine config click
   const handleEditMachineClick = (machine: MachineConfig) => {
     setEditingMachineId(machine.id);
     setEditMachineFormData({
@@ -183,7 +177,6 @@ export default function AdminPage() {
     });
   };
 
-  // Function to handle saving machine config
   const handleSaveMachineClick = async (machineDocId: string) => {
     try {
       const machineRef = doc(db, 'stores', STORE_ID, 'machine_configs', machineDocId);
@@ -191,20 +184,18 @@ export default function AdminPage() {
         duration_minutes: editMachineFormData.duration_minutes,
         is_active: editMachineFormData.is_active,
       });
-      await fetchMachineConfigs(); // Refresh data
-      setEditingMachineId(null); // Exit editing mode
+      await fetchMachineConfigs();
+      setEditingMachineId(null);
     } catch (err) {
       console.error("Error updating machine config:", err);
       setError("ไม่สามารถบันทึกการเปลี่ยนแปลงได้");
     }
   };
 
-  // Function to handle cancelling machine edit
   const handleCancelMachineEdit = () => {
     setEditingMachineId(null);
   };
 
-  // Function to handle cancelling an active timer
   const handleCancelTimer = async (timerId: string, machineDisplayName: string) => {
     if (window.confirm(`คุณแน่ใจหรือไม่ที่จะยกเลิกการจับเวลาของ ${machineDisplayName} (ID: ${timerId})?`)) {
       try {
@@ -218,7 +209,7 @@ export default function AdminPage() {
 
         if (response.ok) {
             alert(`ยกเลิกการจับเวลาของ ${machineDisplayName} เรียบร้อยแล้ว`);
-            await fetchActiveTimers(); // Refresh active timers
+            await fetchActiveTimers();
         } else {
             const errorData = await response.json();
             alert(`ไม่สามารถยกเลิกได้: ${errorData.message || 'เกิดข้อผิดพลาด'}`);
@@ -230,7 +221,6 @@ export default function AdminPage() {
     }
   };
 
-  // === NEW: Message Template Management Functions ===
   const handleEditMessageClick = (template: MessageTemplate) => {
     setEditingMessageId(template.docId);
     setEditMessageFormData(template.text);
@@ -242,8 +232,8 @@ export default function AdminPage() {
       await updateDoc(templateRef, {
         text: editMessageFormData,
       });
-      await fetchMessageTemplates(); // Refresh data
-      setEditingMessageId(null); // Exit editing mode
+      await fetchMessageTemplates();
+      setEditingMessageId(null);
     } catch (err) {
       console.error("Error updating message template:", err);
       setError("ไม่สามารถบันทึกข้อความได้");
@@ -257,38 +247,38 @@ export default function AdminPage() {
   // --- Admin Page Content (after login) ---
   if (loggedIn) {
     return (
-      <div className="container" style={{ maxWidth: '100%', padding: '10px', margin: '10px auto' }}> {/* Reduced max-width, padding, margin for mobile */}
+      <div className="container" style={{ maxWidth: '100%', padding: '10px', margin: '10px auto' }}>
         <div className="card">
-          <h1 style={{ color: 'var(--primary-pink)', fontSize: '1.8em' }}> {/* Reduced font size */}
+          <h1 style={{ color: 'var(--primary-pink)', fontSize: '1.8em' }}>
             <span style={{ fontSize: '1.5em', verticalAlign: 'middle', marginRight: '10px' }}>⚙️</span>
             แผงควบคุมผู้ดูแล
           </h1>
-          <p style={{ color: 'var(--text-dark)', marginBottom: '15px', fontSize: '0.9em' }}>จัดการการตั้งค่าเครื่องซักผ้า-อบผ้า และข้อความแจ้งเตือนของร้าน</p> {/* Reduced font size */}
+          <p style={{ color: 'var(--text-dark)', marginBottom: '15px', fontSize: '0.9em' }}>จัดการการตั้งค่าเครื่องซักผ้า-อบผ้า และข้อความแจ้งเตือนของร้าน</p>
 
           <button
             className="line-button"
-            style={{ backgroundColor: 'var(--dark-pink)', marginBottom: '20px', padding: '10px 20px', fontSize: '1em' }} {/* Reduced padding/font size */}
-            onClick={() => setLoggedIn(false)} // Logout button
+            style={{ backgroundColor: 'var(--dark-pink)', marginBottom: '20px', padding: '10px 20px', fontSize: '1em' }}
+            onClick={() => setLoggedIn(false)}
           >
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🚪</span>
             ออกจากระบบ
           </button>
 
-          {error && <p style={{ color: '#dc3545', marginBottom: '15px', fontWeight: 'bold', fontSize: '0.9em' }}>{error}</p>} {/* Reduced font size */}
+          {error && <p style={{ color: '#dc3545', marginBottom: '15px', fontWeight: 'bold', fontSize: '0.9em' }}>{error}</p>}
 
           {/* Machine Configurations Section */}
-          <h2 style={{ color: 'var(--dark-pink)', marginTop: '20px', marginBottom: '15px', fontSize: '1.4em' }}> {/* Reduced font size */}
+          <h2 style={{ color: 'var(--dark-pink)', marginTop: '20px', marginBottom: '15px', fontSize: '1.4em' }}>
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🔧</span>
             การตั้งค่าเครื่องซักผ้า
           </h2>
           {loadingMachines ? (
             <p style={{ fontSize: '0.9em' }}>กำลังโหลดข้อมูลเครื่องจักร...</p>
           ) : (
-            <div className="machine-list" style={{ textAlign: 'left', overflowX: 'auto' }}> {/* Added overflowX for tables on mobile */}
+            <div className="machine-list" style={{ textAlign: 'left', overflowX: 'auto' }}>
               {machines.length === 0 ? (
                 <p style={{ textAlign: 'center', color: '#777', fontSize: '0.9em' }}>ไม่พบข้อมูลเครื่องจักร</p>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}> {/* Reduced font size */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
                       <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
@@ -373,11 +363,11 @@ export default function AdminPage() {
           {loadingTimers ? (
             <p style={{ fontSize: '0.9em' }}>กำลังโหลดรายการที่กำลังทำงาน...</p>
           ) : (
-            <div className="active-timers-list" style={{ textAlign: 'left', overflowX: 'auto' }}> {/* Added overflowX for tables on mobile */}
+            <div className="active-timers-list" style={{ textAlign: 'left', overflowX: 'auto' }}>
               {activeTimers.length === 0 ? (
                 <p style={{ textAlign: 'center', color: '#777', fontSize: '0.9em' }}>ไม่มีเครื่องใดกำลังทำงานอยู่</p>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}> {/* Reduced font size */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
                       <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
@@ -417,11 +407,11 @@ export default function AdminPage() {
           {loadingMessages ? (
             <p style={{ fontSize: '0.9em' }}>กำลังโหลดข้อความ...</p>
           ) : (
-            <div className="message-templates-list" style={{ textAlign: 'left', overflowX: 'auto' }}> {/* Added overflowX for tables on mobile */}
+            <div className="message-templates-list" style={{ textAlign: 'left', overflowX: 'auto' }}>
               {messageTemplates.length === 0 ? (
                 <p style={{ textAlign: 'center', color: '#777', fontSize: '0.9em' }}>ไม่พบข้อมูลข้อความ กรุณาเพิ่มใน Firebase Console</p>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}> {/* Reduced font size */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
                       <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>ประเภทข้อความ (ID)</th>
@@ -490,7 +480,7 @@ export default function AdminPage() {
   return (
     <div className="container" style={{ maxWidth: '100%', padding: '10px', margin: '10px auto' }}>
       <div className="card">
-        <h1 style={{ fontSize: '1.8em' }}>เข้าสู่ระบบผู้ดูแล</h1> {/* Adjusted font size */}
+        <h1 style={{ fontSize: '1.8em' }}>เข้าสู่ระบบผู้ดูแล</h1>
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <input
             type="password"
@@ -498,20 +488,20 @@ export default function AdminPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             style={{
-              padding: '10px', // Adjusted padding
-              margin: '10px 0', // Adjusted margin
-              borderRadius: '6px', // Adjusted border-radius
+              padding: '10px',
+              margin: '10px 0',
+              borderRadius: '6px',
               border: '1px solid #ddd',
-              width: '90%', // Adjusted width
-              maxWidth: '250px', // Adjusted max-width
-              fontSize: '0.9em' // Adjusted font size
+              width: '90%',
+              maxWidth: '250px',
+              fontSize: '0.9em'
             }}
           />
-          {error && <p style={{ color: '#dc3545', fontSize: '0.8em', marginBottom: '10px' }}>{error}</p>} {/* Adjusted font size */}
+          {error && <p style={{ color: '#dc3545', fontSize: '0.8em', marginBottom: '10px' }}>{error}</p>}
           <button
             type="submit"
             className="line-button"
-            style={{ backgroundColor: '#007bff', padding: '10px 20px', fontSize: '1em' }} {/* Adjusted padding/font size */}
+            style={{ backgroundColor: '#007bff', padding: '10px 20px', fontSize: '1em' }}
           >
             เข้าสู่ระบบ
           </button>
