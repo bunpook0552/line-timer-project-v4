@@ -109,11 +109,10 @@ export default function AdminPage() {
     setLoadingTimers(true);
     try {
       const timersCol = collection(db, 'stores', STORE_ID, 'timers');
-      
-      // *** CORRECTED FIREBASE QUERY SYNTAX ***
+
       const q = query(timersCol, where('status', '==', 'pending'));
       const activeTimersSnapshot = await getDocs(q);
-      
+
       const timerList = activeTimersSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -124,7 +123,7 @@ export default function AdminPage() {
         const dateB = new Date(b.end_time.seconds * 1000 + b.end_time.nanoseconds / 1000000);
         return dateA.getTime() - dateB.getTime();
       });
-      
+
       setActiveTimers(timerList);
     } catch (err: unknown) {
       console.error("Error fetching active timers:", err);
@@ -258,70 +257,71 @@ export default function AdminPage() {
   // --- Admin Page Content (after login) ---
   if (loggedIn) {
     return (
-      <div className="container" style={{ maxWidth: '1000px', padding: '30px', margin: '20px auto' }}>
+      <div className="container" style={{ maxWidth: '100%', padding: '10px', margin: '10px auto' }}> {/* Reduced max-width, padding, margin for mobile */}
         <div className="card">
-          <h1 style={{ color: 'var(--primary-pink)' }}>
+          <h1 style={{ color: 'var(--primary-pink)', fontSize: '1.8em' }}> {/* Reduced font size */}
             <span style={{ fontSize: '1.5em', verticalAlign: 'middle', marginRight: '10px' }}>⚙️</span>
             แผงควบคุมผู้ดูแล
           </h1>
-          <p style={{ color: 'var(--text-dark)', marginBottom: '20px' }}>จัดการการตั้งค่าเครื่องซักผ้า-อบผ้า และข้อความแจ้งเตือนของร้าน</p>
+          <p style={{ color: 'var(--text-dark)', marginBottom: '15px', fontSize: '0.9em' }}>จัดการการตั้งค่าเครื่องซักผ้า-อบผ้า และข้อความแจ้งเตือนของร้าน</p> {/* Reduced font size */}
 
           <button 
             className="line-button" 
-            style={{ backgroundColor: 'var(--dark-pink)', marginBottom: '30px' }}
+            style={{ backgroundColor: 'var(--dark-pink)', marginBottom: '20px', padding: '10px 20px', fontSize: '1em' }} {/* Reduced padding/font size */}
             onClick={() => setLoggedIn(false)} // Logout button
           >
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🚪</span>
             ออกจากระบบ
           </button>
 
-          {error && <p style={{ color: '#dc3545', marginBottom: '15px', fontWeight: 'bold' }}>{error}</p>}
+          {error && <p style={{ color: '#dc3545', marginBottom: '15px', fontWeight: 'bold', fontSize: '0.9em' }}>{error}</p>} {/* Reduced font size */}
 
           {/* Machine Configurations Section */}
-          <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
+          <h2 style={{ color: 'var(--dark-pink)', marginTop: '20px', marginBottom: '15px', fontSize: '1.4em' }}> {/* Reduced font size */}
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🔧</span>
-            การตั้งค่าเครื่องจักร
+            การตั้งค่าเครื่องซักผ้า
           </h2>
           {loadingMachines ? (
-            <p>กำลังโหลดข้อมูลเครื่องจักร...</p>
+            <p style={{ fontSize: '0.9em' }}>กำลังโหลดข้อมูลเครื่องจักร...</p>
           ) : (
-            <div className="machine-list" style={{ textAlign: 'left' }}>
+            <div className="machine-list" style={{ textAlign: 'left', overflowX: 'auto' }}> {/* Added overflowX for tables on mobile */}
               {machines.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#777' }}>ไม่พบข้อมูลเครื่องจักร</p>
+                <p style={{ textAlign: 'center', color: '#777', fontSize: '0.9em' }}>ไม่พบข้อมูลเครื่องจักร</p>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}> {/* Reduced font size */}
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
-                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
-                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>ประเภท</th>
-                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เวลา (นาที)</th>
-                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-dark)' }}>ใช้งานอยู่</th>
-                      <th style={{ padding: '10px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>ประเภท</th>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เวลา (นาที)</th>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--text-dark)' }}>ใช้งานอยู่</th>
+                      <th style={{ padding: '8px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
                     </tr>
                   </thead>
                   <tbody>
                     {machines.map(machine => (
                       <tr key={machine.id} style={{ borderBottom: '1px dashed #eee' }}>
-                        <td style={{ padding: '10px', fontWeight: 'bold' }}>{machine.display_name}</td>
-                        <td style={{ padding: '10px' }}>{machine.machine_type === 'washer' ? 'ซักผ้า' : 'อบผ้า'}</td>
-                        <td style={{ padding: '10px' }}>
+                        <td style={{ padding: '8px', fontWeight: 'bold' }}>{machine.display_name}</td>
+                        <td style={{ padding: '8px' }}>{machine.machine_type === 'washer' ? 'ซักผ้า' : 'อบผ้า'}</td>
+                        <td style={{ padding: '8px' }}>
                           {editingMachineId === machine.id ? (
                             <input
                               type="number"
                               value={editMachineFormData.duration_minutes}
                               onChange={(e) => setEditMachineFormData({ ...editMachineFormData, duration_minutes: parseInt(e.target.value) || 0 })}
-                              style={{ width: '60px', padding: '5px', borderRadius: '5px', border: '1px solid #ccc' }}
+                              style={{ width: '50px', padding: '4px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.9em' }}
                             />
                           ) : (
                             machine.duration_minutes
                           )}
                         </td>
-                        <td style={{ padding: '10px' }}>
+                        <td style={{ padding: '8px' }}>
                           {editingMachineId === machine.id ? (
                             <input
                               type="checkbox"
                               checked={editMachineFormData.is_active}
                               onChange={(e) => setEditMachineFormData({ ...editMachineFormData, is_active: e.target.checked })}
+                              style={{ transform: 'scale(1.2)' }}
                             />
                           ) : (
                             machine.is_active ? 
@@ -329,19 +329,19 @@ export default function AdminPage() {
                               <span style={{ color: '#dc3545', fontWeight: 'bold' }}>❌</span>
                           )}
                         </td>
-                        <td style={{ padding: '10px', textAlign: 'right' }}>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>
                           {editingMachineId === machine.id ? (
                             <>
                               <button 
                                 className="line-button" 
-                                style={{ backgroundColor: 'var(--line-green)', padding: '8px 12px', fontSize: '0.9em', marginRight: '5px' }}
+                                style={{ backgroundColor: 'var(--line-green)', padding: '6px 10px', fontSize: '0.8em', marginRight: '5px' }}
                                 onClick={() => handleSaveMachineClick(machine.id)}
                               >
                                 บันทึก
                               </button>
                               <button 
                                 className="line-button" 
-                                style={{ backgroundColor: '#6c757d', padding: '8px 12px', fontSize: '0.9em' }}
+                                style={{ backgroundColor: '#6c757d', padding: '6px 10px', fontSize: '0.8em' }}
                                 onClick={handleCancelMachineEdit}
                               >
                                 ยกเลิก
@@ -350,7 +350,7 @@ export default function AdminPage() {
                           ) : (
                             <button 
                               className="line-button" 
-                              style={{ backgroundColor: 'var(--primary-pink)', padding: '8px 12px', fontSize: '0.9em' }}
+                              style={{ backgroundColor: 'var(--primary-pink)', padding: '6px 10px', fontSize: '0.8em' }}
                               onClick={() => handleEditMachineClick(machine)}
                             >
                               แก้ไข
@@ -366,36 +366,36 @@ export default function AdminPage() {
           )}
 
           {/* Active Timers Section */}
-          <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
+          <h2 style={{ color: 'var(--dark-pink)', marginTop: '30px', marginBottom: '15px', fontSize: '1.4em' }}>
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>⏱️</span>
             รายการเครื่องที่กำลังทำงาน
           </h2>
           {loadingTimers ? (
-            <p>กำลังโหลดรายการที่กำลังทำงาน...</p>
+            <p style={{ fontSize: '0.9em' }}>กำลังโหลดรายการที่กำลังทำงาน...</p>
           ) : (
-            <div className="active-timers-list" style={{ textAlign: 'left' }}>
+            <div className="active-timers-list" style={{ textAlign: 'left', overflowX: 'auto' }}> {/* Added overflowX for tables on mobile */}
               {activeTimers.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#777' }}>ไม่มีเครื่องใดกำลังทำงานอยู่</p>
+                <p style={{ textAlign: 'center', color: '#777', fontSize: '0.9em' }}>ไม่มีเครื่องใดกำลังทำงานอยู่</p>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}> {/* Reduced font size */}
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
-                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
-                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เริ่มโดย</th>
-                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เสร็จใน</th>
-                      <th style={{ padding: '10px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เริ่มโดย</th>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เสร็จใน</th>
+                      <th style={{ padding: '8px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
                     </tr>
                   </thead>
                   <tbody>
                     {activeTimers.map(timer => (
                       <tr key={timer.id} style={{ borderBottom: '1px dashed #eee' }}>
-                        <td style={{ padding: '10px', fontWeight: 'bold' }}>{timer.display_name} ({timer.duration_minutes} นาที)</td>
-                        <td style={{ padding: '10px', fontSize: '0.9em' }}>{timer.user_id.substring(0, 8)}...</td>
-                        <td style={{ padding: '10px' }}>{new Date(timer.end_time.seconds * 1000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
-                        <td style={{ padding: '10px', textAlign: 'right' }}>
+                        <td style={{ padding: '8px', fontWeight: 'bold' }}>{timer.display_name} ({timer.duration_minutes} นาที)</td>
+                        <td style={{ padding: '8px', fontSize: '0.9em' }}>{timer.user_id.substring(0, 8)}...</td>
+                        <td style={{ padding: '8px' }}>{new Date(timer.end_time.seconds * 1000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>
                           <button 
                             className="line-button" 
-                            style={{ backgroundColor: '#dc3545', padding: '8px 12px', fontSize: '0.9em' }}
+                            style={{ backgroundColor: '#dc3545', padding: '6px 10px', fontSize: '0.8em' }}
                             onClick={() => handleCancelTimer(timer.id, timer.display_name)}
                           >
                             ยกเลิกการจับเวลา
@@ -410,54 +410,54 @@ export default function AdminPage() {
           )}
 
           {/* Message Templates Section */}
-          <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
+          <h2 style={{ color: 'var(--dark-pink)', marginTop: '30px', marginBottom: '15px', fontSize: '1.4em' }}>
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>💬</span>
             ข้อความแจ้งเตือนและตอบกลับ
           </h2>
           {loadingMessages ? (
-            <p>กำลังโหลดข้อความ...</p>
+            <p style={{ fontSize: '0.9em' }}>กำลังโหลดข้อความ...</p>
           ) : (
-            <div className="message-templates-list" style={{ textAlign: 'left' }}>
+            <div className="message-templates-list" style={{ textAlign: 'left', overflowX: 'auto' }}> {/* Added overflowX for tables on mobile */}
               {messageTemplates.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#777' }}>ไม่พบข้อมูลข้อความ กรุณาเพิ่มใน Firebase Console</p>
+                <p style={{ textAlign: 'center', color: '#777', fontSize: '0.9em' }}>ไม่พบข้อมูลข้อความ กรุณาเพิ่มใน Firebase Console</p>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}> {/* Reduced font size */}
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
-                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>ประเภทข้อความ (ID)</th>
-                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เนื้อหาข้อความ</th>
-                      <th style={{ padding: '10px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>ประเภทข้อความ (ID)</th>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เนื้อหาข้อความ</th>
+                      <th style={{ padding: '8px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
                     </tr>
                   </thead>
                   <tbody>
                     {messageTemplates.map(template => (
                       <tr key={template.docId} style={{ borderBottom: '1px dashed #eee' }}>
-                        <td style={{ padding: '10px', fontWeight: 'bold', fontSize: '0.9em' }}>{template.id}</td>
-                        <td style={{ padding: '10px', fontSize: '0.9em' }}>
+                        <td style={{ padding: '8px', fontWeight: 'bold', fontSize: '0.8em' }}>{template.id}</td>
+                        <td style={{ padding: '8px', fontSize: '0.8em' }}>
                           {editingMessageId === template.docId ? (
                             <textarea
                               value={editMessageFormData}
                               onChange={(e) => setEditMessageFormData(e.target.value)}
                               rows={3}
-                              style={{ width: '100%', padding: '5px', borderRadius: '5px', border: '1px solid #ccc', resize: 'vertical' }}
+                              style={{ width: '100%', padding: '4px', borderRadius: '4px', border: '1px solid #ccc', resize: 'vertical', fontSize: '0.8em' }}
                             />
                           ) : (
                             template.text
                           )}
                         </td>
-                        <td style={{ padding: '10px', textAlign: 'right' }}>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>
                           {editingMessageId === template.docId ? (
                             <>
                               <button 
                                 className="line-button" 
-                                style={{ backgroundColor: 'var(--line-green)', padding: '8px 12px', fontSize: '0.9em', marginRight: '5px' }}
+                                style={{ backgroundColor: 'var(--line-green)', padding: '5px 8px', fontSize: '0.7em', marginRight: '5px' }}
                                 onClick={() => handleSaveMessageClick(template.docId)}
                               >
                                 บันทึก
                               </button>
                               <button 
                                 className="line-button" 
-                                style={{ backgroundColor: '#6c757d', padding: '8px 12px', fontSize: '0.9em' }}
+                                style={{ backgroundColor: '#6c757d', padding: '5px 8px', fontSize: '0.7em' }}
                                 onClick={handleCancelMessageEdit}
                               >
                                 ยกเลิก
@@ -466,7 +466,7 @@ export default function AdminPage() {
                           ) : (
                             <button 
                               className="line-button" 
-                              style={{ backgroundColor: 'var(--primary-pink)', padding: '8px 12px', fontSize: '0.9em' }}
+                              style={{ backgroundColor: 'var(--primary-pink)', padding: '5px 8px', fontSize: '0.7em' }}
                               onClick={() => handleEditMessageClick(template)}
                             >
                               แก้ไข
@@ -488,9 +488,9 @@ export default function AdminPage() {
 
   // --- Admin Login Page Content ---
   return (
-    <div className="container" style={{ textAlign: 'center', padding: '50px' }}>
+    <div className="container" style={{ maxWidth: '100%', padding: '10px', margin: '10px auto' }}>
       <div className="card">
-        <h1>เข้าสู่ระบบผู้ดูแล</h1>
+        <h1 style={{ fontSize: '1.8em' }}>เข้าสู่ระบบผู้ดูแล</h1> {/* Adjusted font size */}
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <input
             type="password"
@@ -498,20 +498,20 @@ export default function AdminPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             style={{
-              padding: '12px',
-              margin: '15px 0',
-              borderRadius: '8px',
+              padding: '10px', // Adjusted padding
+              margin: '10px 0', // Adjusted margin
+              borderRadius: '6px', // Adjusted border-radius
               border: '1px solid #ddd',
-              width: '80%',
-              maxWidth: '300px',
-              fontSize: '1em'
+              width: '90%', // Adjusted width
+              maxWidth: '250px', // Adjusted max-width
+              fontSize: '0.9em' // Adjusted font size
             }}
           />
-          {error && <p style={{ color: '#dc3545', fontSize: '0.9em', marginBottom: '10px' }}>{error}</p>}
+          {error && <p style={{ color: '#dc3545', fontSize: '0.8em', marginBottom: '10px' }}>{error}</p>} {/* Adjusted font size */}
           <button 
             type="submit" 
             className="line-button"
-            style={{ backgroundColor: '#007bff' }}
+            style={{ backgroundColor: '#007bff', padding: '10px 20px', fontSize: '1em' }} {/* Adjusted padding/font size */}
           >
             เข้าสู่ระบบ
           </button>
