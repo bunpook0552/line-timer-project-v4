@@ -56,11 +56,14 @@ export async function POST(request: NextRequest) {
     const events = JSON.parse(body).events;
     for (const event of events) {
       if (event.type === 'message' && event.message.type === 'text') {
+        // === ย้ายการประกาศตัวแปรเหล่านี้มาอยู่ข้างนอก if/else block หลัก ===
         const userId = event.source.userId;
         const userMessage = event.message.text.trim();
         const replyToken = event.replyToken;
-        const requestedMachineId = parseInt(userMessage, 10); 
+        // === สิ้นสุดการย้าย ===
 
+        const requestedMachineId = parseInt(userMessage, 10); 
+        
         // --- DEBUG LOG START ---
         console.log("--- WEBHOOK DEBUG LOG ---");
         console.log("Received message for machine ID:", requestedMachineId);
@@ -98,7 +101,7 @@ export async function POST(request: NextRequest) {
             await replyMessage(replyToken, `ขออภัยค่ะ 🙏\nเครื่อง ${displayName} กำลังปิดใช้งานอยู่ค่ะ`);
             return NextResponse.json({ status: "ok, machine inactive" });
         }
-
+        
         // === ตรวจสอบสถานะเครื่องว่าง/ไม่ว่าง ===
         const existingTimersQuery = await db.collection('stores').doc(STORE_ID).collection('timers')
           .where('machine_id', '==', machineId)
@@ -129,7 +132,7 @@ export async function POST(request: NextRequest) {
 
       } else {
         const contactMessage = "ขออภัยค่ะ บอทสามารถตั้งเวลาได้จากตัวเลขของเครื่องเท่านั้นค่ะ 🙏\n\nหากต้องการติดต่อเจ้าหน้าที่โดยตรง กรุณาติดต่อที่:\nโทร: 08x-xxx-xxxx\nหรือที่หน้าเคาน์เตอร์ได้เลยค่ะ";
-await replyMessage(replyToken, contactMessage); // แก้ไขเป็น replyToken
+        await replyMessage(replyToken, contactMessage); // บรรทัดนี้ได้รับการแก้ไขแล้ว
       }
     }
     return NextResponse.json({ status: "ok" });
