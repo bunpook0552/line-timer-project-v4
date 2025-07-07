@@ -46,7 +46,7 @@ export async function GET() {
     for (const doc of querySnapshot.docs) {
       const timer = doc.data();
       const userId = timer.user_id;
-      const machineType = timer.machine_type; // eslint-disable-line no-unused-vars // แก้ไข: ปิดคำเตือน ESLint
+      // FIX: Removed unused variable 'machineType' to resolve the build error.
       const displayName = timer.display_name;
       const durationMinutes = timer.duration_minutes;
 
