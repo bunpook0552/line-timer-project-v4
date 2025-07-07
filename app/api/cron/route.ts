@@ -8,7 +8,7 @@ if (!admin.apps.length) {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
-  } catch (e: unknown) { // แก้ไข: ระบุประเภท unknown สำหรับ catch error
+  } catch (e: unknown) {
     console.error("Firebase Admin initialization error", e);
   }
 }
@@ -42,18 +42,18 @@ export async function GET() {
         return NextResponse.json({ message: "LINE_MESSAGING_TOKEN missing." }, { status: 500 });
     }
 
-    // 2. วนลูปส่งข้อความสำหรับทุกรายการที่เจอ
+    // 2. ววนลูปส่งข้อความสำหรับทุกรายการที่เจอ
     for (const doc of querySnapshot.docs) {
       const timer = doc.data();
       const userId = timer.user_id;
-      const machineType = timer.machine_type; // 'washer' or 'dryer'
-      const displayName = timer.display_name; // 'เครื่องซักผ้า #1'
-      const durationMinutes = timer.duration_minutes; // เวลาที่บันทึกไว้ใน timer
+      const machineType = timer.machine_type; // eslint-disable-line no-unused-vars // แก้ไข: ปิดคำเตือน ESLint
+      const displayName = timer.display_name;
+      const durationMinutes = timer.duration_minutes;
 
       // === ดึงข้อความแจ้งเตือนจาก Firebase (message_templates) ===
       const messageTemplatesCol = db.collection('stores').doc(STORE_ID).collection('message_templates');
       const notificationTemplateDoc = await messageTemplatesCol.where('id', '==', 'timer_completed_notification').limit(1).get();
-
+      
       let notificationText = '🔔 แจ้งเตือน! ✅\nเครื่องของคุณซักเสร็จเรียบร้อยแล้วค่ะ'; // Fallback message
       if (!notificationTemplateDoc.empty) {
           notificationText = notificationTemplateDoc.docs[0].data().text;
