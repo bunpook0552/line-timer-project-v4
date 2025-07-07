@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
         const userId = event.source.userId;
         const userMessage = event.message.text.trim();
         const replyToken = event.replyToken;
-        // === สิ้นสุดการย้าย ===
+        // === สิ้นสุดการย้าย (นี่คือส่วนที่แก้ไข scope ของ replyToken) ===
 
         const requestedMachineId = parseInt(userMessage, 10); 
         
