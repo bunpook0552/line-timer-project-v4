@@ -224,7 +224,7 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) { // แก้ไข: ระบุประเภท unknown สำหรับ catch error
     console.error("Error in webhook handler:", error);
     // In case of any unexpected error, try to reply a generic message
-    const fallbackReplyToken = (request.body as { events?: Array<Record<string, any>> })?.events?.[0]?.replyToken;
+    const fallbackReplyToken = (request.body as { events?: { replyToken?: string }[] })?.events?.[0]?.replyToken;
     if (fallbackReplyToken) {
         await replyMessage(fallbackReplyToken, 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
     }
