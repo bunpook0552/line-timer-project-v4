@@ -12,7 +12,7 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, 
 };
 
 // Initialize Firebase if not already initialized
@@ -44,8 +44,14 @@ interface ActiveTimer {
   machine_type: 'washer' | 'dryer';
   display_name: string;
   duration_minutes: number;
-  end_time: { seconds: number; nanoseconds: number; };
+  end_time: { seconds: number; nanoseconds: number; }; // Firestore Timestamp
   status: string;
+}
+
+interface MessageTemplate {
+  docId: string; // Document ID in Firestore
+  id: string; // Custom ID from database (e.g., 'initial_greeting')
+  text: string;
 }
 
 export default function AdminPage() {
@@ -54,19 +60,24 @@ export default function AdminPage() {
   const [error, setError] = useState('');
   const [machines, setMachines] = useState<MachineConfig[]>([]);
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
+  const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([]); // New state for message templates
   const [loadingMachines, setLoadingMachines] = useState(true);
   const [loadingTimers, setLoadingTimers] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editFormData, setEditFormData] = useState({ duration_minutes: 0, is_active: false });
+  const [loadingMessages, setLoadingMessages] = useState(true); // New loading state for messages
+  const [editingMachineId, setEditingMachineId] = useState<string | null>(null); // Renamed for clarity
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null); // New editing state for messages
+  const [editMachineFormData, setEditMachineFormData] = useState({ duration_minutes: 0, is_active: false }); // Renamed for clarity
+  const [editMessageFormData, setEditMessageFormData] = useState(''); // New editing state for messages
 
-  const STORE_ID = 'laundry_1'; // <--- กำหนด ID ร้านค้าของคุณที่นี่
+  const STORE_ID = 'laundry_1'; // <--- กำหนด ID ร้านค้าของคุณที่นี่ (ใช้สำหรับร้านแรก)
 
   useEffect(() => {
     if (loggedIn) {
       fetchMachineConfigs();
       fetchActiveTimers();
+      fetchMessageTemplates(); // Fetch message templates when logged in
     }
-  }, [loggedIn]);
+  }, [loggedIn]); 
 
   // Function to fetch machine configurations
   const fetchMachineConfigs = async () => {
@@ -102,7 +113,7 @@ export default function AdminPage() {
       // *** CORRECTED FIREBASE QUERY SYNTAX ***
       const q = query(timersCol, where('status', '==', 'pending'));
       const activeTimersSnapshot = await getDocs(q);
-
+      
       const timerList = activeTimersSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -133,7 +144,27 @@ export default function AdminPage() {
     }
   };
 
-  // Function to handle login
+  // === NEW: Function to fetch message templates ===
+  const fetchMessageTemplates = async () => {
+    setLoadingMessages(true);
+    try {
+      const templatesCol = collection(db, 'stores', STORE_ID, 'message_templates');
+      const templateSnapshot = await getDocs(templatesCol);
+      const templateList = templateSnapshot.docs.map(doc => ({
+        docId: doc.id, // Store Firestore's document ID
+        ...doc.data()
+      })) as MessageTemplate[];
+      // Sort alphabetically by custom 'id' for consistent display
+      templateList.sort((a, b) => a.id.localeCompare(b.id));
+      setMessageTemplates(templateList);
+    } catch (err) {
+      console.error("Error fetching message templates:", err);
+      setError("ไม่สามารถดึงข้อมูลข้อความแจ้งเตือนได้");
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (password === ADMIN_PASSWORD) {
@@ -146,33 +177,33 @@ export default function AdminPage() {
   };
 
   // Function to handle edit machine config click
-  const handleEditClick = (machine: MachineConfig) => {
-    setEditingId(machine.id);
-    setEditFormData({
+  const handleEditMachineClick = (machine: MachineConfig) => {
+    setEditingMachineId(machine.id);
+    setEditMachineFormData({
       duration_minutes: machine.duration_minutes,
       is_active: machine.is_active,
     });
   };
 
   // Function to handle saving machine config
-  const handleSaveClick = async (machineId: string) => {
+  const handleSaveMachineClick = async (machineDocId: string) => {
     try {
-      const machineRef = doc(db, 'stores', STORE_ID, 'machine_configs', machineId);
+      const machineRef = doc(db, 'stores', STORE_ID, 'machine_configs', machineDocId);
       await updateDoc(machineRef, {
-        duration_minutes: editFormData.duration_minutes,
-        is_active: editFormData.is_active,
+        duration_minutes: editMachineFormData.duration_minutes,
+        is_active: editMachineFormData.is_active,
       });
-      await fetchMachineConfigs();
-      setEditingId(null);
+      await fetchMachineConfigs(); // Refresh data
+      setEditingMachineId(null); // Exit editing mode
     } catch (err) {
       console.error("Error updating machine config:", err);
       setError("ไม่สามารถบันทึกการเปลี่ยนแปลงได้");
     }
   };
 
-  // Function to handle cancelling edit
-  const handleCancelClick = () => {
-    setEditingId(null);
+  // Function to handle cancelling machine edit
+  const handleCancelMachineEdit = () => {
+    setEditingMachineId(null);
   };
 
   // Function to handle cancelling an active timer
@@ -189,7 +220,7 @@ export default function AdminPage() {
 
         if (response.ok) {
             alert(`ยกเลิกการจับเวลาของ ${machineDisplayName} เรียบร้อยแล้ว`);
-            await fetchActiveTimers();
+            await fetchActiveTimers(); // Refresh active timers
         } else {
             const errorData = await response.json();
             alert(`ไม่สามารถยกเลิกได้: ${errorData.message || 'เกิดข้อผิดพลาด'}`);
@@ -201,21 +232,45 @@ export default function AdminPage() {
     }
   };
 
+  // === NEW: Message Template Management Functions ===
+  const handleEditMessageClick = (template: MessageTemplate) => {
+    setEditingMessageId(template.docId);
+    setEditMessageFormData(template.text);
+  };
+
+  const handleSaveMessageClick = async (templateDocId: string) => {
+    try {
+      const templateRef = doc(db, 'stores', STORE_ID, 'message_templates', templateDocId);
+      await updateDoc(templateRef, {
+        text: editMessageFormData,
+      });
+      await fetchMessageTemplates(); // Refresh data
+      setEditingMessageId(null); // Exit editing mode
+    } catch (err) {
+      console.error("Error updating message template:", err);
+      setError("ไม่สามารถบันทึกข้อความได้");
+    }
+  };
+
+  const handleCancelMessageEdit = () => {
+    setEditingMessageId(null);
+  };
+
   // --- Admin Page Content (after login) ---
   if (loggedIn) {
     return (
-      <div className="container" style={{ maxWidth: '900px', padding: '30px', margin: '20px auto' }}>
+      <div className="container" style={{ maxWidth: '1000px', padding: '30px', margin: '20px auto' }}>
         <div className="card">
           <h1 style={{ color: 'var(--primary-pink)' }}>
             <span style={{ fontSize: '1.5em', verticalAlign: 'middle', marginRight: '10px' }}>⚙️</span>
             แผงควบคุมผู้ดูแล
           </h1>
-          <p style={{ color: 'var(--text-dark)', marginBottom: '20px' }}>จัดการการตั้งค่าเครื่องซักผ้าและอบผ้าของร้าน</p>
+          <p style={{ color: 'var(--text-dark)', marginBottom: '20px' }}>จัดการการตั้งค่าเครื่องซักผ้า-อบผ้า และข้อความแจ้งเตือนของร้าน</p>
 
           <button 
             className="line-button" 
             style={{ backgroundColor: 'var(--dark-pink)', marginBottom: '30px' }}
-            onClick={() => setLoggedIn(false)}
+            onClick={() => setLoggedIn(false)} // Logout button
           >
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🚪</span>
             ออกจากระบบ
@@ -241,7 +296,7 @@ export default function AdminPage() {
                       <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
                       <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>ประเภท</th>
                       <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เวลา (นาที)</th>
-                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>สถานะ</th>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--text-dark)' }}>ใช้งานอยู่</th>
                       <th style={{ padding: '10px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
                     </tr>
                   </thead>
@@ -251,11 +306,11 @@ export default function AdminPage() {
                         <td style={{ padding: '10px', fontWeight: 'bold' }}>{machine.display_name}</td>
                         <td style={{ padding: '10px' }}>{machine.machine_type === 'washer' ? 'ซักผ้า' : 'อบผ้า'}</td>
                         <td style={{ padding: '10px' }}>
-                          {editingId === machine.id ? (
+                          {editingMachineId === machine.id ? (
                             <input
                               type="number"
-                              value={editFormData.duration_minutes}
-                              onChange={(e) => setEditFormData({ ...editFormData, duration_minutes: parseInt(e.target.value) || 0 })}
+                              value={editMachineFormData.duration_minutes}
+                              onChange={(e) => setEditMachineFormData({ ...editMachineFormData, duration_minutes: parseInt(e.target.value) || 0 })}
                               style={{ width: '60px', padding: '5px', borderRadius: '5px', border: '1px solid #ccc' }}
                             />
                           ) : (
@@ -263,32 +318,32 @@ export default function AdminPage() {
                           )}
                         </td>
                         <td style={{ padding: '10px' }}>
-                          {editingId === machine.id ? (
+                          {editingMachineId === machine.id ? (
                             <input
                               type="checkbox"
-                              checked={editFormData.is_active}
-                              onChange={(e) => setEditFormData({ ...editFormData, is_active: e.target.checked })}
+                              checked={editMachineFormData.is_active}
+                              onChange={(e) => setEditMachineFormData({ ...editMachineFormData, is_active: e.target.checked })}
                             />
                           ) : (
                             machine.is_active ? 
-                              <span style={{ color: 'var(--line-green)', fontWeight: 'bold' }}>ใช้งานอยู่</span> : 
-                              <span style={{ color: '#dc3545', fontWeight: 'bold' }}>ปิดใช้งาน</span>
+                              <span style={{ color: 'var(--line-green)', fontWeight: 'bold' }}>✅</span> : 
+                              <span style={{ color: '#dc3545', fontWeight: 'bold' }}>❌</span>
                           )}
                         </td>
                         <td style={{ padding: '10px', textAlign: 'right' }}>
-                          {editingId === machine.id ? (
+                          {editingMachineId === machine.id ? (
                             <>
                               <button 
                                 className="line-button" 
                                 style={{ backgroundColor: 'var(--line-green)', padding: '8px 12px', fontSize: '0.9em', marginRight: '5px' }}
-                                onClick={() => handleSaveClick(machine.id)}
+                                onClick={() => handleSaveMachineClick(machine.id)}
                               >
                                 บันทึก
                               </button>
                               <button 
                                 className="line-button" 
                                 style={{ backgroundColor: '#6c757d', padding: '8px 12px', fontSize: '0.9em' }}
-                                onClick={handleCancelClick}
+                                onClick={handleCancelMachineEdit}
                               >
                                 ยกเลิก
                               </button>
@@ -297,7 +352,7 @@ export default function AdminPage() {
                             <button 
                               className="line-button" 
                               style={{ backgroundColor: 'var(--primary-pink)', padding: '8px 12px', fontSize: '0.9em' }}
-                              onClick={() => handleEditClick(machine)}
+                              onClick={() => handleEditMachineClick(machine)}
                             >
                               แก้ไข
                             </button>
@@ -354,6 +409,79 @@ export default function AdminPage() {
               )}
             </div>
           )}
+
+          {/* Message Templates Section */}
+          <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
+            <span style={{ fontSize: '1.2em', vertical-align: 'middle', marginRight: '5px' }}>💬</span>
+            ข้อความแจ้งเตือนและตอบกลับ
+          </h2>
+          {loadingMessages ? (
+            <p>กำลังโหลดข้อความ...</p>
+          ) : (
+            <div className="message-templates-list" style={{ textAlign: 'left' }}>
+              {messageTemplates.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#777' }}>ไม่พบข้อมูลข้อความ กรุณาเพิ่มใน Firebase Console</p>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>ประเภทข้อความ (ID)</th>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เนื้อหาข้อความ</th>
+                      <th style={{ padding: '10px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {messageTemplates.map(template => (
+                      <tr key={template.docId} style={{ borderBottom: '1px dashed #eee' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold', fontSize: '0.9em' }}>{template.id}</td>
+                        <td style={{ padding: '10px', fontSize: '0.9em' }}>
+                          {editingMessageId === template.docId ? (
+                            <textarea
+                              value={editMessageFormData}
+                              onChange={(e) => setEditMessageFormData(e.target.value)}
+                              rows={3}
+                              style={{ width: '100%', padding: '5px', borderRadius: '5px', border: '1px solid #ccc', resize: 'vertical' }}
+                            />
+                          ) : (
+                            template.text
+                          )}
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'right' }}>
+                          {editingMessageId === template.docId ? (
+                            <>
+                              <button 
+                                className="line-button" 
+                                style={{ backgroundColor: 'var(--line-green)', padding: '8px 12px', fontSize: '0.9em', marginRight: '5px' }}
+                                onClick={() => handleSaveMessageClick(template.docId)}
+                              >
+                                บันทึก
+                              </button>
+                              <button 
+                                className="line-button" 
+                                style={{ backgroundColor: '#6c757d', padding: '8px 12px', fontSize: '0.9em' }}
+                                onClick={handleCancelMessageEdit}
+                              >
+                                ยกเลิก
+                              </button>
+                            </>
+                          ) : (
+                            <button 
+                              className="line-button" 
+                              style={{ backgroundColor: 'var(--primary-pink)', padding: '8px 12px', fontSize: '0.9em' }}
+                              onClick={() => handleEditMessageClick(template)}
+                            >
+                              แก้ไข
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
         </div>
       </div>
     );
