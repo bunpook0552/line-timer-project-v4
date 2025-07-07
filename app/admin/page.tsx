@@ -45,7 +45,7 @@ interface ActiveTimer {
   display_name: string;
   duration_minutes: number;
   // แก้ไข end_time ให้ตรงกับโครงสร้างที่ Firestore ส่งมา (seconds, nanoseconds)
-  end_time: { seconds: number; nanoseconds: number; }; 
+  end_time: { seconds: number; nanoseconds: number; };
   status: string;
 }
 
@@ -55,7 +55,7 @@ export default function AdminPage() {
   const [error, setError] = useState('');
   const [machines, setMachines] = useState<MachineConfig[]>([]);
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]); // New state for active timers
-  const [loadingMachines, setLoadingMachines] = useState(true); 
+  const [loadingMachines, setLoadingMachines] = useState(true);
   const [loadingTimers, setLoadingTimers] = useState(true); // New loading state for timers
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState({ duration_minutes: 0, is_active: false });
@@ -67,7 +67,7 @@ export default function AdminPage() {
       fetchMachineConfigs();
       fetchActiveTimers(); // Fetch active timers when logged in
     }
-  }, [loggedIn]); 
+  }, [loggedIn]);
 
   // Function to fetch machine configurations
   const fetchMachineConfigs = async () => {
@@ -102,8 +102,8 @@ export default function AdminPage() {
       // แก้ไขการ Query: ถ้าคุณเจอ Error 9 FAILED_PRECONDITION: The query requires an index.
       // ให้ไปที่ Firebase Console -> Firestore Database -> Indexes
       // แล้วสร้าง Composite Index สำหรับ Collection Group 'timers' ที่มี Field path: status (Ascending) และ end_time (Ascending)
-      const activeTimersSnapshot = await getDocs(timersCol.where('status', '==', 'pending')); 
-      
+      const activeTimersSnapshot = await getDocs(timersCol.where('status', '==', 'pending'));
+
       const timerList = activeTimersSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -116,24 +116,25 @@ export default function AdminPage() {
         const dateB = new Date(b.end_time.seconds * 1000 + b.end_time.nanoseconds / 1000000);
         return dateA.getTime() - dateB.getTime();
       });
-      
+
       setActiveTimers(timerList);
-} catch (err: unknown) { // ระบุว่าเป็น unknown
-  console.error("Error fetching active timers:", err);
-  // เพิ่มการจัดการ Error เฉพาะสำหรับ Index
-  if (typeof err === 'object' && err !== null && 'code' in err && 'details' in err) {
-    const firebaseError = err as { code: string, details: string }; // Cast to known structure
-    if (firebaseError.code === 'failed-precondition' && firebaseError.details.includes('requires an index')) {
-      setError("Firebase Index สำหรับรายการที่กำลังทำงานยังไม่ถูกสร้าง กรุณาสร้างตามคำแนะนำใน Console Log");
-    } else {
-      setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
+    } catch (err: unknown) { // ระบุว่าเป็น unknown
+      console.error("Error fetching active timers:", err);
+      // เพิ่มการจัดการ Error เฉพาะสำหรับ Index
+      if (typeof err === 'object' && err !== null && 'code' in err && 'details' in err) {
+        const firebaseError = err as { code: string, details: string }; // Cast to known structure
+        if (firebaseError.code === 'failed-precondition' && firebaseError.details.includes('requires an index')) {
+          setError("Firebase Index สำหรับรายการที่กำลังทำงานยังไม่ถูกสร้าง กรุณาสร้างตามคำแนะนำใน Console Log");
+        } else {
+          setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
+        }
+      } else {
+        setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
+      }
+    } finally {
+      setLoadingTimers(false);
     }
-  } else {
-    setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
-  }
-} finally {
-  setLoadingTimers(false);
-}
+  };
 
   // Function to handle login
   const handleLogin = (e: React.FormEvent) => {
@@ -215,8 +216,8 @@ export default function AdminPage() {
           </h1>
           <p style={{ color: 'var(--text-dark)', marginBottom: '20px' }}>จัดการการตั้งค่าเครื่องซักผ้าและอบผ้าของร้าน</p>
 
-          <button 
-            className="line-button" 
+          <button
+            className="line-button"
             style={{ backgroundColor: 'var(--dark-pink)', marginBottom: '30px' }}
             onClick={() => setLoggedIn(false)} // Logout button
           >
@@ -273,23 +274,23 @@ export default function AdminPage() {
                               onChange={(e) => setEditFormData({ ...editFormData, is_active: e.target.checked })}
                             />
                           ) : (
-                            machine.is_active ? 
-                              <span style={{ color: 'var(--line-green)', fontWeight: 'bold' }}>ใช้งานอยู่</span> : 
+                            machine.is_active ?
+                              <span style={{ color: 'var(--line-green)', fontWeight: 'bold' }}>ใช้งานอยู่</span> :
                               <span style={{ color: '#dc3545', fontWeight: 'bold' }}>ปิดใช้งาน</span>
                           )}
                         </td>
                         <td style={{ padding: '10px', textAlign: 'right' }}>
                           {editingId === machine.id ? (
                             <>
-                              <button 
-                                className="line-button" 
+                              <button
+                                className="line-button"
                                 style={{ backgroundColor: 'var(--line-green)', padding: '8px 12px', fontSize: '0.9em', marginRight: '5px' }}
                                 onClick={() => handleSaveClick(machine.id)}
                               >
                                 บันทึก
                               </button>
-                              <button 
-                                className="line-button" 
+                              <button
+                                className="line-button"
                                 style={{ backgroundColor: '#6c757d', padding: '8px 12px', fontSize: '0.9em' }}
                                 onClick={handleCancelClick}
                               >
@@ -297,8 +298,8 @@ export default function AdminPage() {
                               </button>
                             </>
                           ) : (
-                            <button 
-                              className="line-button" 
+                            <button
+                              className="line-button"
                               style={{ backgroundColor: 'var(--primary-pink)', padding: '8px 12px', fontSize: '0.9em' }}
                               onClick={() => handleEditClick(machine)}
                             >
@@ -342,8 +343,8 @@ export default function AdminPage() {
                         <td style={{ padding: '10px', fontSize: '0.9em' }}>{timer.user_id.substring(0, 8)}...</td> {/* Show truncated User ID */}
                         <td style={{ padding: '10px' }}>{new Date(timer.end_time.seconds * 1000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
                         <td style={{ padding: '10px', textAlign: 'right' }}>
-                          <button 
-                            className="line-button" 
+                          <button
+                            className="line-button"
                             style={{ backgroundColor: '#dc3545', padding: '8px 12px', fontSize: '0.9em' }}
                             onClick={() => handleCancelTimer(timer.id, timer.display_name)}
                           >
@@ -384,8 +385,8 @@ export default function AdminPage() {
             }}
           />
           {error && <p style={{ color: '#dc3545', fontSize: '0.9em', marginBottom: '10px' }}>{error}</p>}
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             className="line-button"
             style={{ backgroundColor: '#007bff' }}
           >
