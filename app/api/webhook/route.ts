@@ -111,7 +111,7 @@ async function fetchMessagesFromFirestore(storeId: string): Promise<void> {
 
     // ฟังก์ชันสำหรับส่งข้อความตอบกลับพร้อมปุ่ม Quick Reply
     async function replyMessage(replyToken: string, text: string, quickReplyItems?: QuickReplyItem[]) {
-      const replyUrl = 'https://api.line.me/v2/bot/message/reply';
+      const replyUrl = '[https://api.line.me/v2/bot/message/reply](https://api.line.me/v2/bot/message/reply)';
       const accessToken = process.env.LINE_MESSAGING_TOKEN!;
       
       const messagePayload: {
