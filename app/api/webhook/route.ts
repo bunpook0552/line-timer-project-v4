@@ -17,7 +17,7 @@ const db = admin.firestore();
 // --- สิ้นสุดส่วนการเชื่อมต่อ ---
 
 // === กำหนด ID ร้านค้า (สำหรับร้านแรก) ===
-const STORE_ID = 'laundry_1'; 
+const STORE_ID = 'laundry_1';
 
 // กำหนด Type สำหรับ Quick Reply Item เพื่อความถูกต้องของ TypeScript
 interface QuickReplyAction {
@@ -39,14 +39,14 @@ interface MessageTemplate {
 
 // --- Global variable to store fetched messages (cached across invocations) ---
 // This map will store messages like: {'initial_greeting': 'สวัสดีค่ะ...'}
-const messagesMap = new Map<string, string>();
+const messageTemplatesMap = new Map<string, string>();
 
 
 // ฟังก์ชันสำหรับดึงข้อความจาก Firebase Firestore
 async function fetchMessagesFromFirestore(storeId: string): Promise<void> {
     // ถ้ามีข้อความอยู่ใน cache แล้ว ไม่ต้องดึงซ้ำ (ลดการอ่าน DB)
-    if (messagesMap.size > 0) {
-        return; 
+    if (messageTemplatesMap.size > 0) {
+        return;
     }
 
     try {
@@ -63,7 +63,7 @@ async function fetchMessagesFromFirestore(storeId: string): Promise<void> {
             messagesMap.set('non_text_message', 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น');
             messagesMap.set('contact_message', 'ขออภัยค่ะ บอทสามารถตั้งเวลาได้จากตัวเลขของเครื่องเท่านั้นค่ะ 🙏\n\nหากต้องการติดต่อเจ้าหน้าที่โดยตรง กรุณาติดต่อที่:\nโทร: 08x-xxx-xxxx\nหรือที่หน้าเคาน์เตอร์ได้เลยค่ะ');
             messagesMap.set('generic_error', 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
-            // Add new landing page texts as fallbacks too
+            // Landing page texts as fallbacks
             messagesMap.set('landing_page_title', '🧺 Washing & Drying 🧺');
             messagesMap.set('landing_page_subtitle', 'ร้านซัก-อบ จบครบที่เดียว หน้าโลตัสอินทร์');
             messagesMap.set('landing_page_notification_header', 'แจ้งเตือนเมื่อผ้าซัก-อบเสร็จ!');
@@ -78,7 +78,7 @@ async function fetchMessagesFromFirestore(storeId: string): Promise<void> {
             snapshot.forEach(doc => {
                 const data = doc.data() as MessageTemplate;
                 if (data.id && data.text) {
-                    messageTemplatesMap.set(data.id, data.text);
+                    messagesMap.set(data.id, data.text);
                 }
             });
             console.log(`Fetched ${messagesMap.size} message templates.`);
