@@ -488,7 +488,7 @@ export default function AdminPage() {
                           type="checkbox"
                           checked={newMachineFormData.is_active}
                           onChange={(e) => setNewMachineFormData({ ...newMachineFormData, is_active: e.target.checked })}
-                          style={{ transform: 'scale(1.2)', marginRight: '5px' }}
+                          style={{ transform: 'scale(1.2)' }}
                       /> เปิดใช้งาน
                       
                       <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
