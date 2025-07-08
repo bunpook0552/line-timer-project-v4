@@ -16,9 +16,6 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 // --- สิ้นสุดส่วนการเชื่อมต่อ ---
 
-// === กำหนด ID ร้านค้า (สำหรับร้านแรก) ===
-const STORE_ID = 'laundry_1'; 
-
 // กำหนด Type สำหรับ Quick Reply Item เพื่อความถูกต้องของ TypeScript
 interface QuickReplyAction {
   type: 'message';
@@ -37,83 +34,13 @@ interface MessageTemplate {
   text: string;
 }
 
-// --- Global variable to store fetched messages (cached across invocations) ---
-// This map will store messages like: {'initial_greeting': 'สวัสดีค่ะ...'}
+// --- Global variable to store fetched messages ---
 const messageTemplatesMap = new Map<string, string>();
 
-
-// ฟังก์ชันสำหรับดึงข้อความจาก Firebase Firestore
-async function fetchMessagesFromFirestore(storeId: string): Promise<void> {
-    // ถ้ามีข้อความอยู่ใน cache แล้ว ไม่ต้องดึงซ้ำ (ลดการอ่าน DB)
-    if (messageTemplatesMap.size > 0) {
-        return; 
-    }
-
-    try {
-        const templatesCol = db.collection('stores').doc(storeId).collection('message_templates');
-        const snapshot = await templatesCol.get();
-        if (snapshot.empty) {
-            console.warn("No message templates found in Firestore. Using default fallbacks.");
-            // Fallback to basic default messages if nothing found in DB
-            messageTemplatesMap.set('initial_greeting', 'สวัสดีค่ะ ร้านซัก-อบ ยินดีต้อนรับ 🙏\n\n📢 กรุณาเลือกบริการที่ต้องการด้านล่างนี้ได้เลยค่ะ!');
-            messageTemplatesMap.set('start_timer_confirmation', 'รับทราบค่ะ! ✅\nเริ่มจับเวลา {duration} นาทีสำหรับ {display_name} แล้วค่ะ');
-            messageTemplatesMap.set('machine_busy', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังใช้งานอยู่ค่ะ');
-            messageTemplatesMap.set('machine_inactive', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังปิดใช้งานอยู่ค่ะ');
-            messageTemplatesMap.set('machine_not_found', 'ขออภัยค่ะ ไม่พบหมายเลขเครื่องที่คุณระบุ กรุณาพิมพ์เฉพาะตัวเลขของเครื่องที่เปิดใช้งานค่ะ');
-            messageTemplatesMap.set('non_text_message', 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น');
-            messageTemplatesMap.set('contact_message', 'ขออภัยค่ะ บอทสามารถตั้งเวลาได้จากตัวเลขของเครื่องเท่านั้นค่ะ 🙏\n\nหากต้องการติดต่อเจ้าหน้าที่โดยตรง กรุณาติดต่อที่:\nโทร: 08x-xxx-xxxx\nหรือที่หน้าเคาน์เตอร์ได้เลยค่ะ');
-            messageTemplatesMap.set('generic_error', 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
-            // Add new landing page texts as fallbacks too
-            messageTemplatesMap.set('landing_page_title', '🧺 Washing & Drying 🧺');
-            messageTemplatesMap.set('landing_page_subtitle', 'ร้านซัก-อบ จบครบที่เดียว หน้าโลตัสอินทร์');
-            messageTemplatesMap.set('landing_page_notification_header', 'แจ้งเตือนเมื่อผ้าซัก-อบเสร็จ!');
-            messageTemplatesMap.set('landing_page_notification_description', 'ไม่ต้องรอ ไม่ต้องเฝ้า! ระบบจะแจ้งเตือนคุณผ่าน LINE ทันทีที่ผ้าของคุณซักหรืออบเสร็จ');
-            messageTemplatesMap.set('landing_page_step1_text', 'สแกน QR Code ที่หน้าเครื่องซัก-อบ');
-            messageTemplatesMap.set('landing_page_step2_text', 'กดปุ่มด้านล่างเพื่อเพิ่มเพื่อน LINE Official Account ของร้านเรา');
-            messageTemplatesMap.set('landing_page_step3_text', 'พิมพ์ "สวัสดี" หรือข้อความใดๆ ใน LINE Chat แล้วทำตามขั้นตอนเพื่อเลือกเครื่องและเริ่มจับเวลา');
-            messageTemplatesMap.set('landing_page_button_text', 'เพิ่มเพื่อนใน LINE รับการแจ้งเตือน');
-            messageTemplatesMap.set('landing_page_footer_note', '(ระบบจะส่งข้อความแจ้งเตือนผ่าน LINE Official Account ของเรา)');
-
-        } else {
-            snapshot.forEach(doc => {
-                const data = doc.data() as MessageTemplate;
-                if (data.id && data.text) {
-                    messageTemplatesMap.set(data.id, data.text);
-                }
-            });
-            console.log(`Fetched ${messageTemplatesMap.size} message templates.`);
-        }
-    } catch (error) {
-        console.error("Error fetching message templates from Firestore:", error);
-        // Ensure basic fallbacks are set even if fetch fails
-        if (messageTemplatesMap.size === 0) { // Set fallbacks only if map is still empty
-            messageTemplatesMap.set('initial_greeting', 'สวัสดีค่ะ ร้านซัก-อบ ยินดีต้อนรับ 🙏\n\n📢 กรุณาเลือกบริการที่ต้องการด้านล่างนี้ได้เลยค่ะ!');
-            messageTemplatesMap.set('start_timer_confirmation', 'รับทราบค่ะ! ✅\nเริ่มจับเวลา {duration} นาทีสำหรับ {display_name} แล้วค่ะ');
-            messageTemplatesMap.set('machine_busy', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังใช้งานอยู่ค่ะ');
-            messageTemplatesMap.set('machine_inactive', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังปิดใช้งานอยู่ค่ะ');
-            messageTemplatesMap.set('machine_not_found', 'ขออภัยค่ะ ไม่พบหมายเลขเครื่องที่คุณระบุ กรุณาพิมพ์เฉพาะตัวเลขของเครื่องที่เปิดใช้งานค่ะ');
-            messageTemplatesMap.set('non_text_message', 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น');
-            messageTemplatesMap.set('contact_message', 'ขออภัยค่ะ บอทสามารถตั้งเวลาได้จากตัวเลขของเครื่องเท่านั้นค่ะ 🙏\n\nหากต้องการติดต่อเจ้าหน้าที่โดยตรง กรุณาติดต่อที่:\nโทร: 08x-xxx-xxxx\nหรือที่หน้าเคาน์เตอร์ได้เลยค่ะ');
-            messageTemplatesMap.set('generic_error', 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
-            // Add new landing page texts as fallbacks too
-            messageTemplatesMap.set('landing_page_title', '🧺 Washing & Drying 🧺');
-            messageTemplatesMap.set('landing_page_subtitle', 'ร้านซัก-อบ จบครบที่เดียว หน้าโลตัสอินทร์');
-            messageTemplatesMap.set('landing_page_notification_header', 'แจ้งเตือนเมื่อผ้าซัก-อบเสร็จ!');
-            messageTemplatesMap.set('landing_page_notification_description', 'ไม่ต้องรอ ไม่ต้องเฝ้า! ระบบจะแจ้งเตือนคุณผ่าน LINE ทันทีที่ผ้าของคุณซักหรืออบเสร็จ');
-            messageTemplatesMap.set('landing_page_step1_text', 'สแกน QR Code ที่หน้าเครื่องซัก-อบ');
-            messageTemplatesMap.set('landing_page_step2_text', 'กดปุ่มด้านล่างเพื่อเพิ่มเพื่อน LINE Official Account ของร้านเรา');
-            messageTemplatesMap.set('landing_page_step3_text', 'พิมพ์ "สวัสดี" หรือข้อความใดๆ ใน LINE Chat แล้วทำตามขั้นตอนเพื่อเลือกเครื่องและเริ่มจับเวลา');
-            messageTemplatesMap.set('landing_page_button_text', 'เพิ่มเพื่อนใน LINE รับการแจ้งเตือน');
-            messageTemplatesMap.set('landing_page_footer_note', '(ระบบจะส่งข้อความแจ้งเตือนผ่าน LINE Official Account ของเรา)');
-        }
-    }
-}
-
-
 // ฟังก์ชันสำหรับส่งข้อความตอบกลับพร้อมปุ่ม Quick Reply
-async function replyMessage(replyToken: string, text: string, quickReplyItems?: QuickReplyItem[]) {
+// FIXED: เพิ่มพารามิเตอร์ accessToken เพื่อให้ใช้ Token ของแต่ละร้านได้
+async function replyMessage(replyToken: string, text: string, accessToken: string, quickReplyItems?: QuickReplyItem[]) {
   const replyUrl = 'https://api.line.me/v2/bot/message/reply';
-  const accessToken = process.env.LINE_MESSAGING_TOKEN!;
 
   const messagePayload: {
     replyToken: string;
@@ -134,7 +61,7 @@ async function replyMessage(replyToken: string, text: string, quickReplyItems?: 
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`,
+      'Authorization': `Bearer ${accessToken}`, // FIXED: ใช้ accessToken ที่ส่งเข้ามา
     },
     body: JSON.stringify(messagePayload),
   });
@@ -144,50 +71,44 @@ async function replyMessage(replyToken: string, text: string, quickReplyItems?: 
 }
 
 // ฟังก์ชันสำหรับเริ่มจับเวลาและบันทึกลง DB
-async function startTimer(userId: string, storeId: string, machineType: 'washer' | 'dryer', machineId: number, duration: number, displayName: string, replyToken: string) {
+// FIXED: เพิ่มพารามิเตอร์ accessToken และ messagesMap
+async function startTimer(userId: string, storeId: string, machineType: 'washer' | 'dryer', machineId: number, duration: number, displayName: string, replyToken: string, accessToken: string, messagesMap: Map<string, string>) {
     const endTime = new Date(Date.now() + duration * 60 * 1000);
 
-    // === ตรวจสอบสถานะเครื่องว่าง/ไม่ว่าง ก่อนบันทึก ===
     const existingTimersQuery = await db.collection('stores').doc(storeId).collection('timers')
         .where('machine_id', '==', machineId)
         .where('machine_type', '==', machineType)
         .where('status', '==', 'pending')
-        .get(); 
+        .get();
 
     if (!existingTimersQuery.empty) {
-        await replyMessage(replyToken, messageTemplatesMap.get('machine_busy')?.replace('{display_name}', displayName) || 'เครื่องกำลังใช้งานอยู่');
-        return; // ไม่ต้องทำต่อ ถ้าเครื่องไม่ว่าง
+        await replyMessage(replyToken, messagesMap.get('machine_busy')?.replace('{display_name}', displayName) || 'เครื่องกำลังใช้งานอยู่', accessToken);
+        return;
     }
 
-    // บันทึกข้อมูลลง Firestore (timers sub-collection ภายใต้ Store ID)
     await db.collection('stores').doc(storeId).collection('timers').add({
         user_id: userId,
         machine_id: machineId,
-        machine_type: machineType, 
-        display_name: displayName, 
-        duration_minutes: duration, 
-        end_time: admin.firestore.Timestamp.fromDate(endTime), // ใช้ Timestamp.fromDate
+        machine_type: machineType,
+        display_name: displayName,
+        duration_minutes: duration,
+        end_time: admin.firestore.Timestamp.fromDate(endTime),
         status: 'pending',
-        created_at: admin.firestore.FieldValue.serverTimestamp(), // เพิ่ม created_at
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    await replyMessage(replyToken, 
-        messageTemplatesMap.get('start_timer_confirmation')
+    await replyMessage(replyToken,
+        messagesMap.get('start_timer_confirmation')
         ?.replace('{duration}', String(duration))
-        .replace('{display_name}', displayName) || 'รับทราบค่ะ! เริ่มจับเวลาแล้ว');
+        .replace('{display_name}', displayName) || 'รับทราบค่ะ! เริ่มจับเวลาแล้ว', accessToken);
 }
 
+
 export async function POST(request: NextRequest) {
-  let storeId: string | null = null; // Declare storeId here
-  let channelIdFromLine: string | null = null; // Channel ID from LINE event
-
   try {
-    // === ดึงข้อความจาก Firestore ในทุกการเรียกใช้ ===
-    // This will be dynamic based on the LINE channel ID
-
     const body = await request.text();
     const signature = request.headers.get('x-line-signature') || '';
-    const channelSecretEnv = process.env.LINE_MESSAGING_CHANNEL_SECRET!; // Renamed to avoid conflict
+    const channelSecretEnv = process.env.LINE_MESSAGING_CHANNEL_SECRET!;
 
     if (!channelSecretEnv) {
       console.error("LINE_MESSAGING_CHANNEL_SECRET is not set.");
@@ -203,74 +124,66 @@ export async function POST(request: NextRequest) {
     for (const event of events) {
         if (event.source && (event.source.type === 'group' || event.source.type === 'room')) {
             console.warn("Messages from group/room chat are not supported by this bot.");
-            continue; // Skip group/room messages
+            continue;
         }
         if (!event.source || !event.source.userId || !event.source.channelId) {
             console.error("Invalid LINE event source or missing user/channel ID.");
-            continue; // Skip events without essential source info
+            continue;
         }
 
-        // === NEW: Identify store based on LINE's Channel ID ===
-        channelIdFromLine = event.source.channelId;
+        const channelIdFromLine = event.source.channelId;
         const storesQuery = await db.collection('stores')
             .where('line_channel_id', '==', channelIdFromLine)
             .limit(1)
             .get();
 
         if (storesQuery.empty) {
-            console.error(`Store not found for LINE Channel ID: ${channelIdFromLine}. Please configure this LINE channel in Firebase 'stores' collection.`);
+            console.error(`Store not found for LINE Channel ID: ${channelIdFromLine}.`);
             return new NextResponse("Store not configured for this LINE channel.", { status: 404 });
         }
+
         const storeData = storesQuery.docs[0].data();
-        storeId = storesQuery.docs[0].id; // Get the Firestore Document ID as STORE_ID
-        const currentStoreLineToken = storeData.line_access_token; // Get Access Token for this store
+        const storeId = storesQuery.docs[0].id;
+        const currentStoreLineToken = storeData.line_access_token;
 
         if (!currentStoreLineToken) {
             console.error(`LINE Access Token missing for store: ${storeId}`);
             throw new Error("LINE Access Token is missing for the identified store.");
         }
-
-        // Fetch messages for this specific store (or use fallbacks)
-        messagesMap.clear(); // Clear map for each request to ensure fresh messages
+        
+        // FIXED: เปลี่ยนชื่อตัวแปรให้ถูกต้องเป็น messageTemplatesMap
+        messageTemplatesMap.clear(); // Clear map for each request to ensure fresh messages
         const messagesSnapshot = await db.collection('stores').doc(storeId).collection('message_templates').get();
         if (messagesSnapshot.empty) {
             console.warn(`No message templates found for store ${storeId}. Using default fallbacks.`);
             // Fallback to basic default messages if nothing found in DB
-            messagesMap.set('initial_greeting', 'สวัสดีค่ะ ร้านซัก-อบ ยินดีต้อนรับ 🙏\n\n📢 กรุณาเลือกบริการที่ต้องการด้านล่างนี้ได้เลยค่ะ!');
-            messagesMap.set('start_timer_confirmation', 'รับทราบค่ะ! ✅\nเริ่มจับเวลา {duration} นาทีสำหรับ {display_name} แล้วค่ะ');
-            messagesMap.set('machine_busy', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังใช้งานอยู่ค่ะ');
-            messagesMap.set('machine_inactive', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังปิดใช้งานอยู่ค่ะ');
-            messagesMap.set('machine_not_found', 'ขออภัยค่ะ ไม่พบหมายเลขเครื่องที่คุณระบุ กรุณาพิมพ์เฉพาะตัวเลขของเครื่องที่เปิดใช้งานค่ะ');
-            messagesMap.set('non_text_message', 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น');
-            messagesMap.set('contact_message', 'ขออภัยค่ะ บอทสามารถตั้งเวลาได้จากตัวเลขของเครื่องเท่านั้นค่ะ 🙏\n\nหากต้องการติดต่อเจ้าหน้าที่โดยตรง กรุณาติดต่อที่:\nโทร: 08x-xxx-xxxx\nหรือที่หน้าเคาน์เตอร์ได้เลยค่ะ');
-            messagesMap.set('generic_error', 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
-            // Landing page texts as fallbacks
-            messagesMap.set('landing_page_title', '🧺 Washing & Drying 🧺');
-            messagesMap.set('landing_page_subtitle', 'ร้านซัก-อบ จบครบที่เดียว หน้าโลตัสอินทร์');
-            messagesMap.set('landing_page_notification_header', 'แจ้งเตือนเมื่อผ้าซัก-อบเสร็จ!');
-            messagesMap.set('landing_page_notification_description', 'ไม่ต้องรอ ไม่ต้องเฝ้า! ระบบจะแจ้งเตือนคุณผ่าน LINE ทันทีที่ผ้าของคุณซักหรืออบเสร็จ');
-            messagesMap.set('landing_page_step1_text', 'สแกน QR Code ที่หน้าเครื่องซัก-อบ');
-            messagesMap.set('landing_page_step2_text', 'กดปุ่มด้านล่างเพื่อเพิ่มเพื่อน LINE Official Account ของร้านเรา');
-            messagesMap.set('landing_page_step3_text', 'พิมพ์ "สวัสดี" หรือข้อความใดๆ ใน LINE Chat แล้วทำตามขั้นตอนเพื่อเลือกเครื่องและเริ่มจับเวลา');
-            messagesMap.set('landing_page_button_text', 'เพิ่มเพื่อนใน LINE รับการแจ้งเตือน');
-            messagesMap.set('landing_page_footer_note', '(ระบบจะส่งข้อความแจ้งเตือนผ่าน LINE Official Account ของเรา)');
+            messageTemplatesMap.set('initial_greeting', 'สวัสดีค่ะ ร้านซัก-อบ ยินดีต้อนรับ 🙏\n\n📢 กรุณาเลือกบริการที่ต้องการด้านล่างนี้ได้เลยค่ะ!');
+            messageTemplatesMap.set('start_timer_confirmation', 'รับทราบค่ะ! ✅\nเริ่มจับเวลา {duration} นาทีสำหรับ {display_name} แล้วค่ะ');
+            messageTemplatesMap.set('machine_busy', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังใช้งานอยู่ค่ะ');
+            messageTemplatesMap.set('machine_inactive', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังปิดใช้งานอยู่ค่ะ');
+            messageTemplatesMap.set('machine_not_found', 'ขออภัยค่ะ ไม่พบหมายเลขเครื่องที่คุณระบุ กรุณาพิมพ์เฉพาะตัวเลขของเครื่องที่เปิดใช้งานค่ะ');
         } else {
-            // console.log(`Fetched ${messagesMap.size} message templates for store ${storeId}.`);
+            // FIXED: เพิ่มโค้ดที่ขาดหายไปสำหรับวนลูปใส่ข้อมูลลง Map
+            messagesSnapshot.forEach(doc => {
+                const data = doc.data() as MessageTemplate;
+                if (data.id && data.text) {
+                    messageTemplatesMap.set(data.id, data.text);
+                }
+            });
+            console.log(`Fetched ${messageTemplatesMap.size} message templates for store ${storeId}.`);
         }
 
         if (event.type === 'message' && event.message.type === 'text') {
-            const userId = event.source.userId; 
+            const userId = event.source.userId;
             const userMessage = event.message.text.trim().toLowerCase();
-            const replyToken = event.replyToken; 
+            const replyToken = event.replyToken;
 
-            // --- DEBUG LOG START ---
             console.log("--- WEBHOOK DEBUG LOG ---");
             console.log("Received message:", userMessage);
             console.log("Identified STORE_ID:", storeId);
+            console.log("Greeting message:", messageTemplatesMap.get('initial_greeting')); // For debugging
             // --- DEBUG LOG END ---
 
-            // === LOGIC ใหม่: ตรวจสอบข้อความที่เข้ามา ===
-            // ขั้นตอนที่ 1: ลูกค้าเลือกประเภท (ซักผ้า/อบผ้า)
             if (userMessage === "ซักผ้า") {
                 const machineConfigsCol = db.collection('stores').doc(storeId).collection('machine_configs');
                 const q = machineConfigsCol.where('machine_type', '==', 'washer').where('is_active', '==', true);
@@ -278,16 +191,13 @@ export async function POST(request: NextRequest) {
 
                 const washerButtons: QuickReplyItem[] = machineSnapshot.docs.map(doc => {
                     const data = doc.data();
-                    return {
-                        type: 'action',
-                        action: { type: 'message', label: `เครื่อง ${data.machine_id}`, text: `ซักผ้า_เลือก_${data.machine_id}` }
-                    };
+                    return { type: 'action', action: { type: 'message', label: `เครื่อง ${data.machine_id}`, text: `ซักผ้า_เลือก_${data.machine_id}` } };
                 });
 
                 if (washerButtons.length > 0) {
-                    await replyMessage(replyToken, messagesMap.get('select_washer_message') || 'กรุณาเลือกหมายเลขเครื่องซักผ้าค่ะ', currentStoreLineToken, washerButtons);
+                    await replyMessage(replyToken, messageTemplatesMap.get('select_washer_message') || 'กรุณาเลือกหมายเลขเครื่องซักผ้าค่ะ', currentStoreLineToken, washerButtons);
                 } else {
-                    await replyMessage(replyToken, messagesMap.get('no_washer_available_message') || 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องซักผ้าว่าง', currentStoreLineToken);
+                    await replyMessage(replyToken, messageTemplatesMap.get('no_washer_available_message') || 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องซักผ้าว่าง', currentStoreLineToken);
                 }
 
             } else if (userMessage === "อบผ้า") {
@@ -297,19 +207,15 @@ export async function POST(request: NextRequest) {
 
                 const dryerButtons: QuickReplyItem[] = machineSnapshot.docs.map(doc => {
                     const data = doc.data();
-                    return {
-                        type: 'action',
-                        action: { type: 'message', label: `${data.duration_minutes} นาที`, text: `อบผ้า_เลือก_${data.machine_id}` }
-                    };
+                    return { type: 'action', action: { type: 'message', label: `${data.duration_minutes} นาที`, text: `อบผ้า_เลือก_${data.machine_id}` } };
                 });
 
                 if (dryerButtons.length > 0) {
-                    await replyMessage(replyToken, messagesMap.get('select_dryer_message') || 'กรุณาเลือกเวลาสำหรับเครื่องอบผ้าค่ะ', currentStoreLineToken, dryerButtons);
+                    await replyMessage(replyToken, messageTemplatesMap.get('select_dryer_message') || 'กรุณาเลือกเวลาสำหรับเครื่องอบผ้าค่ะ', currentStoreLineToken, dryerButtons);
                 } else {
-                    await replyMessage(replyToken, messagesMap.get('no_dryer_available_message') || 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องอบผ้าว่าง', currentStoreLineToken);
+                    await replyMessage(replyToken, messageTemplatesMap.get('no_dryer_available_message') || 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องอบผ้าว่าง', currentStoreLineToken);
                 }
-            } 
-            // ขั้นตอนที่ 2: ลูกค้าเลือกหมายเลขเครื่อง
+            }
             else if (userMessage.startsWith("ซักผ้า_เลือก_")) {
                 const requestedMachineId = parseInt(userMessage.replace('ซักผ้า_เลือก_', ''), 10);
                 if (!isNaN(requestedMachineId)) {
@@ -320,15 +226,15 @@ export async function POST(request: NextRequest) {
                     if (!machineSnapshot.empty) {
                         const machineConfigData = machineSnapshot.docs[0].data();
                         if (machineConfigData.is_active) {
-                            await startTimer(userId, storeId, 'washer', machineConfigData.machine_id, machineConfigData.duration_minutes, machineConfigData.display_name, replyToken, currentStoreLineToken, messagesMap);
+                            await startTimer(userId, storeId, 'washer', machineConfigData.machine_id, machineConfigData.duration_minutes, machineConfigData.display_name, replyToken, currentStoreLineToken, messageTemplatesMap);
                         } else {
-                            await replyMessage(replyToken, messagesMap.get('machine_inactive')?.replace('{display_name}', machineConfigData.display_name) || 'เครื่องปิดใช้งานอยู่', currentStoreLineToken);
+                            await replyMessage(replyToken, messageTemplatesMap.get('machine_inactive')?.replace('{display_name}', machineConfigData.display_name) || 'เครื่องปิดใช้งานอยู่', currentStoreLineToken);
                         }
                     } else {
-                        await replyMessage(replyToken, messagesMap.get('machine_not_found') || 'ไม่พบหมายเลขเครื่องซักผ้าที่คุณเลือก', currentStoreLineToken);
+                        await replyMessage(replyToken, messageTemplatesMap.get('machine_not_found') || 'ไม่พบหมายเลขเครื่องซักผ้าที่คุณเลือก', currentStoreLineToken);
                     }
                 } else {
-                    await replyMessage(replyToken, messagesMap.get('machine_not_found') || 'ข้อมูลหมายเลขเครื่องซักผ้าไม่ถูกต้อง', currentStoreLineToken); 
+                    await replyMessage(replyToken, messageTemplatesMap.get('machine_not_found') || 'ข้อมูลหมายเลขเครื่องซักผ้าไม่ถูกต้อง', currentStoreLineToken);
                 }
             } else if (userMessage.startsWith("อบผ้า_เลือก_")) {
                 const requestedMachineId = parseInt(userMessage.replace('อบผ้า_เลือก_', ''), 10);
@@ -340,41 +246,43 @@ export async function POST(request: NextRequest) {
                     if (!machineSnapshot.empty) {
                         const machineConfigData = machineSnapshot.docs[0].data();
                         if (machineConfigData.is_active) {
-                            await startTimer(userId, storeId, 'dryer', machineConfigData.machine_id, machineConfigData.duration_minutes, machineConfigData.display_name, replyToken, currentStoreLineToken, messagesMap);
+                            await startTimer(userId, storeId, 'dryer', machineConfigData.machine_id, machineConfigData.duration_minutes, machineConfigData.display_name, replyToken, currentStoreLineToken, messageTemplatesMap);
                         } else {
-                            await replyMessage(replyToken, messagesMap.get('machine_inactive')?.replace('{display_name}', machineConfigData.display_name) || 'เครื่องปิดใช้งานอยู่', currentStoreLineToken);
+                            await replyMessage(replyToken, messageTemplatesMap.get('machine_inactive')?.replace('{display_name}', machineConfigData.display_name) || 'เครื่องปิดใช้งานอยู่', currentStoreLineToken);
                         }
                     } else {
-                        await replyMessage(replyToken, messagesMap.get('machine_not_found') || 'ไม่พบเครื่องอบผ้าที่คุณเลือก', currentStoreLineToken);
+                        await replyMessage(replyToken, messageTemplatesMap.get('machine_not_found') || 'ไม่พบเครื่องอบผ้าที่คุณเลือก', currentStoreLineToken);
                     }
                 } else {
-                    await replyMessage(replyToken, messagesMap.get('machine_not_found') || 'ข้อมูลเครื่องอบผ้าไม่ถูกต้อง', currentStoreLineToken);
+                    await replyMessage(replyToken, messageTemplatesMap.get('machine_not_found') || 'ข้อมูลเครื่องอบผ้าไม่ถูกต้อง', currentStoreLineToken);
                 }
             }
-            // ขั้นตอนที่ 0: ข้อความทักทายครั้งแรก หรือข้อความที่ไม่รู้จัก
             else {
                 const initialButtons: QuickReplyItem[] = [
                     { type: 'action', action: { type: 'message', label: 'ซักผ้า', text: 'ซักผ้า' } },
                     { type: 'action', action: { type: 'message', label: 'อบผ้า', text: 'อบผ้า' } }
                 ];
-                await replyMessage(replyToken, messagesMap.get('initial_greeting') || 'สวัสดีค่ะ กรุณาเลือกบริการที่ต้องการค่ะ', currentStoreLineToken, initialButtons);
+                await replyMessage(replyToken, messageTemplatesMap.get('initial_greeting') || 'สวัสดีค่ะ กรุณาเลือกบริการที่ต้องการค่ะ', currentStoreLineToken, initialButtons);
             }
-        } else { // Handle non-text messages (e.g., sticker, image)
+        } else {
             if (event.replyToken) {
-                await replyMessage(event.replyToken, messagesMap.get('non_text_message') || 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น', currentStoreLineToken);
+                await replyMessage(event.replyToken, messageTemplatesMap.get('non_text_message') || 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น', currentStoreLineToken);
             }
         }
     }
     return NextResponse.json({ status: "ok" });
-} catch (error: unknown) {
-    console.error("Error in webhook handler:", error);
-    // In case of any unexpected error, try to reply a generic message
-    const fallbackReplyToken = (request.body as { events?: { replyToken?: string }[] })?.events?.[0]?.replyToken;
-    // Try to get token from a static env var as fallback if store-specific token failed
-    const fallbackAccessToken = process.env.LINE_MESSAGING_TOKEN; 
+  } catch (error: unknown) {
+      console.error("Error in webhook handler:", error);
+      // In case of any unexpected error, try to reply a generic message
+      // A more robust way to get replyToken in case of early failure
+      const bodyForToken = await request.json().catch(() => ({ events: [] }));
+      const fallbackReplyToken = bodyForToken?.events?.[0]?.replyToken;
+      const fallbackAccessToken = process.env.LINE_MESSAGING_TOKEN;
 
-    if (fallbackReplyToken && fallbackAccessToken) {
-        await replyMessage(fallbackReplyToken, messagesMap.get('generic_error') || 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง', fallbackAccessToken);
-    }
-    return new NextResponse("Internal Server Error", { status: 500 });
-}
+      if (fallbackReplyToken && fallbackAccessToken) {
+          // Here we use the global map as a last resort because store-specific fetch might have failed
+          await replyMessage(fallbackReplyToken, messageTemplatesMap.get('generic_error') || 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง', fallbackAccessToken);
+      }
+      return new NextResponse("Internal Server Error", { status: 500 });
+  }
+} // FIXED: เพิ่มวงเล็บปีกกาปิด `}` ที่ขาดไปสำหรับฟังก์ชัน POST
