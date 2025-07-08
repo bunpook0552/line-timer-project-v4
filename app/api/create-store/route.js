@@ -1,6 +1,6 @@
-// api/create-store.js
+// app/api/create-store/route.js
 
-const admin = require('firebase-admin');
+import admin from 'firebase-admin'; // <--- แก้ไข: เปลี่ยน require เป็น import
 
 // ตรวจสอบว่า Firebase Admin SDK ได้ถูก initialize หรือยัง
 // นี่เป็นสิ่งสำคัญเพื่อให้มั่นใจว่าเรา initialize เพียงครั้งเดียวเท่านั้น
@@ -26,19 +26,21 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const auth = admin.auth();
 
-module.exports = async (req, res) => {
-  // ตรวจสอบว่าเป็น HTTP POST request เท่านั้น
-  if (req.method !== 'POST') {
-    return res.status(405).send('Method Not Allowed. Only POST requests are allowed.');
-  }
+// <--- แก้ไข: เปลี่ยน module.exports เป็น export async function POST(req)
+export async function POST(req) {
+  // รับข้อมูลจาก Body ของ Request โดยใช้ req.json() แทน req.body
+  const { name, lineChannelId, lineChannelSecret, lineAccessToken, adminEmail, tempPassword } = await req.json(); // <--- แก้ไข: ใช้ await req.json() แทน req.body
 
   try {
-    // ดึงข้อมูลจาก Body ของ Request ที่ส่งมาจาก Softr Form
-    const { name, lineChannelId, lineChannelSecret, lineAccessToken, adminEmail, tempPassword } = req.body;
-
     // ตรวจสอบว่าข้อมูลที่จำเป็นครบถ้วนหรือไม่
     if (!name || !lineChannelId || !lineChannelSecret || !lineAccessToken || !adminEmail || !tempPassword) {
-      return res.status(400).json({ message: 'Missing required fields. Please provide name, lineChannelId, lineChannelSecret, lineAccessToken, adminEmail, and tempPassword.' });
+      // <--- แก้ไข: ปรับการส่ง Response โดยใช้ new Response
+      return new Response(JSON.stringify({ message: 'Missing required fields. Please provide name, lineChannelId, lineChannelSecret, lineAccessToken, adminEmail, and tempPassword.' }), {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
     }
 
     // --- ขั้นตอนที่ 1: สร้าง User ใน Firebase Authentication ก่อน ---
@@ -106,11 +108,17 @@ module.exports = async (req, res) => {
     });
 
     // ส่ง Response กลับไปบอก Softr ว่าสำเร็จ
-    res.status(200).json({
+    // <--- แก้ไข: ปรับการส่ง Response โดยใช้ new Response
+    return new Response(JSON.stringify({
       message: 'Store and Admin created successfully!',
       storeId: newStoreRef.id,
       adminUid: userRecord.uid,
       storeName: name
+    }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json'
+      }
     });
 
   } catch (error) {
@@ -121,6 +129,12 @@ module.exports = async (req, res) => {
         console.error('Failed to delete partially created user:', deleteError);
       });
     }
-    res.status(500).json({ message: 'Error creating store', error: error.message });
+    // <--- แก้ไข: ปรับการส่ง Response โดยใช้ new Response
+    return new Response(JSON.stringify({ message: 'Error creating store', error: error.message }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
   }
-};
+}
