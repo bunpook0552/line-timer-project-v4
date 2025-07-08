@@ -62,7 +62,7 @@ export default function AdminPage() {
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
   const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([]); // New state for message templates
   const [loadingMachines, setLoadingMachines] = useState(true);
-  const [loadingTimers, setLoadingTimers] = true;
+  const [loadingTimers, setLoadingTimers] = useState(true); // แก้ไข: ลบ = true;
   const [loadingMessages, setLoadingMessages] = useState(true); // New loading state for messages
   const [editingMachineId, setEditingMachineId] = useState<string | null>(null); // Renamed for clarity
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null); // New editing state for messages
