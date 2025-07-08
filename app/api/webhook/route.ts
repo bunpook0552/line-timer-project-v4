@@ -3,8 +3,11 @@ import admin from 'firebase-admin';
 import crypto from 'crypto';
 
 // --- ส่วนเริ่มต้นการเชื่อมต่อ Firebase Admin SDK (สำหรับหลังบ้าน) ---
+// Initialize Firebase Admin SDK if it hasn't been initialized yet.
+// This ensures that the app can communicate with Firestore.
 if (!admin.apps.length) {
   try {
+    // Parse the service account key from environment variables.
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT!);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
@@ -16,83 +19,92 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 // --- สิ้นสุดส่วนการเชื่อมต่อ ---
 
-// === กำหนด ID ร้านค้า (สำหรับร้านแรก) ===
-const STORE_ID = 'laundry_1';
+// --- Type Definitions for TypeScript ---
 
-// กำหนด Type สำหรับ Quick Reply Item เพื่อความถูกต้องของ TypeScript
+// Defines the structure for a LINE Quick Reply action.
 interface QuickReplyAction {
   type: 'message';
   label: string;
   text: string;
 }
 
+// Defines the structure for a LINE Quick Reply item.
 interface QuickReplyItem {
   type: 'action';
   action: QuickReplyAction;
 }
 
-// --- Type for Message Templates from Firestore ---
+// Defines the structure for message templates fetched from Firestore.
 interface MessageTemplate {
-  id: string; // The custom ID like 'initial_greeting'
+  id: string; // A custom identifier like 'initial_greeting'
   text: string;
 }
 
-// --- Global variable to store fetched messages (cached across invocations) ---
-// This map will store messages like: {'initial_greeting': 'สวัสดีค่ะ...'}
-const messageTemplatesMap = new Map<string, string>();
+// --- Global variable to cache fetched messages ---
+// Using a Map to store messages improves performance by avoiding repeated Firestore queries.
+const messagesMap = new Map<string, string>();
 
 
-// ฟังก์ชันสำหรับดึงข้อความจาก Firebase Firestore
+// --- Helper Functions ---
+
+/**
+ * Fetches message templates from a specific store's collection in Firestore.
+ * If templates are not found, it populates the cache with default fallback messages.
+ * @param {string} storeId - The Firestore document ID of the store.
+ */
 async function fetchMessagesFromFirestore(storeId: string): Promise<void> {
-    // ถ้ามีข้อความอยู่ใน cache แล้ว ไม่ต้องดึงซ้ำ (ลดการอ่าน DB)
-    if (messageTemplatesMap.size > 0) {
-        return; 
-    }
+    // To ensure freshness, clear the map for each request.
+    // This prevents serving stale data from a previous invocation.
+    messagesMap.clear();
+    messagesMap.set('store_id_in_cache', storeId);
 
     try {
         const templatesCol = db.collection('stores').doc(storeId).collection('message_templates');
         const snapshot = await templatesCol.get();
         if (snapshot.empty) {
-            console.warn("No message templates found in Firestore. Using default fallbacks.");
-            // Fallback to basic default messages if nothing found in DB
-            messageTemplatesMap.set('initial_greeting', 'สวัสดีค่ะ ร้านซัก-อบ ยินดีต้อนรับ 🙏\n\nกรุณาเลือกบริการที่ต้องการค่ะ');
-            messageTemplatesMap.set('start_timer_confirmation', 'รับทราบค่ะ! ✅\nเริ่มจับเวลา {duration} นาทีสำหรับ {display_name} แล้วค่ะ');
-            messageTemplatesMap.set('machine_busy', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังใช้งานอยู่ค่ะ');
-            messageTemplatesMap.set('machine_inactive', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังปิดใช้งานอยู่ค่ะ');
-            messageTemplatesMap.set('machine_not_found', 'ขออภัยค่ะ ไม่พบหมายเลขเครื่องที่คุณระบุ กรุณาพิมพ์เฉพาะตัวเลขของเครื่องที่เปิดใช้งานค่ะ');
-            messageTemplatesMap.set('non_text_message', 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น');
-            messageTemplatesMap.set('contact_message', 'ขออภัยค่ะ บอทสามารถตั้งเวลาได้จากตัวเลขของเครื่องเท่านั้นค่ะ 🙏\n\nหากต้องการติดต่อเจ้าหน้าที่โดยตรง กรุณาติดต่อที่:\nโทร: 08x-xxx-xxxx\nหรือที่หน้าเคาน์เตอร์ได้เลยค่ะ');
-            messageTemplatesMap.set('generic_error', 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
+            console.warn(`No message templates found for store ${storeId}. Using default fallbacks.`);
+            // Populate with default messages if none are found in the database.
+            messagesMap.set('initial_greeting', 'สวัสดีค่ะ ร้านซัก-อบ ยินดีต้อนรับ 🙏\n\n📢 กรุณาเลือกบริการที่ต้องการด้านล่างนี้ได้เลยค่ะ!');
+            messagesMap.set('start_timer_confirmation', 'รับทราบค่ะ! ✅\nเริ่มจับเวลา {duration} นาทีสำหรับ {display_name} แล้วค่ะ');
+            messagesMap.set('machine_busy', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังใช้งานอยู่ค่ะ');
+            messagesMap.set('machine_inactive', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังปิดใช้งานอยู่ค่ะ');
+            messagesMap.set('machine_not_found', 'ขออภัยค่ะ ไม่พบหมายเลขเครื่องที่คุณระบุ กรุณาพิมพ์เฉพาะตัวเลขของเครื่องที่เปิดใช้งานค่ะ');
+            messagesMap.set('non_text_message', 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น');
+            messagesMap.set('select_washer_message', 'กรุณาเลือกหมายเลขเครื่องซักผ้าค่ะ');
+            messagesMap.set('no_washer_available_message', 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องซักผ้าว่าง');
+            messagesMap.set('select_dryer_message', 'กรุณาเลือกเวลาสำหรับเครื่องอบผ้าค่ะ');
+            messagesMap.set('no_dryer_available_message', 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องอบผ้าว่าง');
+            messagesMap.set('generic_error', 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
         } else {
             snapshot.forEach(doc => {
                 const data = doc.data() as MessageTemplate;
+                // Ensure the document has the required fields before adding to the map.
                 if (data.id && data.text) {
-                    messageTemplatesMap.set(data.id, data.text);
+                    messagesMap.set(data.id, data.text);
                 }
             });
-            console.log(`Fetched ${messageTemplatesMap.size} message templates.`);
+            console.log(`Fetched ${messagesMap.size} message templates for store ${storeId}.`);
         }
     } catch (error) {
         console.error("Error fetching message templates from Firestore:", error);
-        // Ensure basic fallbacks are set even if fetch fails
-        if (messageTemplatesMap.size === 0) {
-            messageTemplatesMap.set('initial_greeting', 'สวัสดีค่ะ ร้านซัก-อบ ยินดีต้อนรับ 🙏\n\nกรุณาเลือกบริการที่ต้องการค่ะ');
-            messageTemplatesMap.set('start_timer_confirmation', 'รับทราบค่ะ! ✅\nเริ่มจับเวลา {duration} นาทีสำหรับ {display_name} แล้วค่ะ');
-            messageTemplatesMap.set('machine_busy', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังใช้งานอยู่ค่ะ');
-            messageTemplatesMap.set('machine_inactive', 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังปิดใช้งานอยู่ค่ะ');
-            messageTemplatesMap.set('machine_not_found', 'ขออภัยค่ะ ไม่พบหมายเลขเครื่องที่คุณระบุ กรุณาพิมพ์เฉพาะตัวเลขของเครื่องที่เปิดใช้งานค่ะ');
-            messageTemplatesMap.set('non_text_message', 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น');
-            messageTemplatesMap.set('contact_message', 'ขออภัยค่ะ บอทสามารถตั้งเวลาได้จากตัวเลขของเครื่องเท่านั้นค่ะ 🙏\n\nหากต้องการติดต่อเจ้าหน้าที่โดยตรง กรุณาติดต่อที่:\nโทร: 08x-xxx-xxxx\nหรือที่หน้าเคาน์เตอร์ได้เลยค่ะ');
-            messageTemplatesMap.set('generic_error', 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
+        // Ensure basic fallbacks are set even if the fetch operation fails.
+        if (messagesMap.size === 1) { // Only store_id_in_cache is present
+            messagesMap.set('initial_greeting', 'สวัสดีค่ะ ร้านซัก-อบ ยินดีต้อนรับ 🙏\n\n📢 กรุณาเลือกบริการที่ต้องการด้านล่างนี้ได้เลยค่ะ!');
+            messagesMap.set('generic_error', 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
         }
     }
 }
 
-
-// ฟังก์ชันสำหรับส่งข้อความตอบกลับพร้อมปุ่ม Quick Reply
-async function replyMessage(replyToken: string, text: string, quickReplyItems?: QuickReplyItem[]) {
+/**
+ * Sends a reply message to the user via the LINE Messaging API.
+ * @param {string} replyToken - The token for replying to a specific event.
+ * @param {string} text - The message text to send.
+ * @param {string} currentStoreLineToken - The LINE Access Token for the specific store.
+ * @param {QuickReplyItem[]} [quickReplyItems] - Optional array of quick reply buttons.
+ */
+async function replyMessage(replyToken: string, text: string, currentStoreLineToken: string, quickReplyItems?: QuickReplyItem[]) {
   const replyUrl = 'https://api.line.me/v2/bot/message/reply';
-  const accessToken = process.env.LINE_MESSAGING_TOKEN!;
+  const accessToken = currentStoreLineToken;
 
   const messagePayload: {
     replyToken: string;
@@ -105,194 +117,237 @@ async function replyMessage(replyToken: string, text: string, quickReplyItems?: 
     replyToken: replyToken,
     messages: [{ type: 'text', text: text }],
   };
+
   if (quickReplyItems && quickReplyItems.length > 0) {
     messagePayload.messages[0].quickReply = { items: quickReplyItems };
   }
 
-  const response = await fetch(replyUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(messagePayload),
-  });
-  if (!response.ok) {
-    console.error("Failed to send reply message:", await response.json());
+  try {
+    const response = await fetch(replyUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(messagePayload),
+    });
+    if (!response.ok) {
+      console.error("Failed to send reply message:", await response.json());
+    }
+  } catch (error) {
+    console.error("Error sending LINE reply:", error);
   }
 }
 
-// ฟังก์ชันสำหรับเริ่มจับเวลาและบันทึกลง DB
-async function startTimer(userId: string, storeId: string, machineType: 'washer' | 'dryer', machineId: number, duration: number, displayName: string, replyToken: string) {
+/**
+ * Starts a timer for a machine, checking if it's already in use.
+ * @param {string} userId - The LINE user ID.
+ * @param {string} storeId - The Firestore document ID of the store.
+ * @param {'washer' | 'dryer'} machineType - The type of machine.
+ * @param {number} machineId - The ID of the machine.
+ * @param {number} duration - The duration of the timer in minutes.
+ * @param {string} displayName - The display name of the machine.
+ * @param {string} replyToken - The LINE reply token.
+ * @param {string} currentStoreLineToken - The LINE Access Token for the store.
+ */
+async function startTimer(userId: string, storeId: string, machineType: 'washer' | 'dryer', machineId: number, duration: number, displayName:string, replyToken: string, currentStoreLineToken: string) {
     const endTime = new Date(Date.now() + duration * 60 * 1000);
 
-    // === ตรวจสอบสถานะเครื่องว่าง/ไม่ว่าง ก่อนบันทึก ===
+    // Check if the machine is already running a timer.
     const existingTimersQuery = await db.collection('stores').doc(storeId).collection('timers')
         .where('machine_id', '==', machineId)
         .where('machine_type', '==', machineType)
         .where('status', '==', 'pending')
-        .get(); 
+        .get();
 
     if (!existingTimersQuery.empty) {
-        await replyMessage(replyToken, messageTemplatesMap.get('machine_busy')?.replace('{display_name}', displayName) || 'เครื่องกำลังใช้งานอยู่');
-        return; // ไม่ต้องทำต่อ ถ้าเครื่องไม่ว่าง
+        // If the machine is busy, notify the user and stop.
+        await replyMessage(replyToken, messagesMap.get('machine_busy')?.replace('{display_name}', displayName) || 'เครื่องกำลังใช้งานอยู่', currentStoreLineToken);
+        return;
     }
 
-    // บันทึกข้อมูลลง Firestore (timers sub-collection ภายภายใต้ Store ID)
+    // If the machine is available, add a new timer document to Firestore.
     await db.collection('stores').doc(storeId).collection('timers').add({
         user_id: userId,
         machine_id: machineId,
-        machine_type: machineType, 
-        display_name: displayName, 
-        duration_minutes: duration, 
-        end_time: admin.firestore.Timestamp.fromDate(endTime), // ใช้ Timestamp.fromDate
+        machine_type: machineType,
+        display_name: displayName,
+        duration_minutes: duration,
+        end_time: admin.firestore.Timestamp.fromDate(endTime),
         status: 'pending',
-        created_at: admin.firestore.FieldValue.serverTimestamp(), // เพิ่ม created_at
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    await replyMessage(replyToken, 
-        messageTemplatesMap.get('start_timer_confirmation')
+    // Confirm to the user that the timer has started.
+    await replyMessage(replyToken,
+        messagesMap.get('start_timer_confirmation')
         ?.replace('{duration}', String(duration))
-        .replace('{display_name}', displayName) || 'รับทราบค่ะ! เริ่มจับเวลาแล้ว');
+        .replace('{display_name}', displayName) || 'รับทราบค่ะ! เริ่มจับเวลาแล้ว', currentStoreLineToken);
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    // === ดึงข้อความจาก Firestore ในทุกการเรียกใช้ ===
-    await fetchMessagesFromFirestore(STORE_ID);
 
+// --- Main Webhook Handler (Exported) ---
+
+/**
+ * Handles incoming webhook POST requests from the LINE Messaging API.
+ * @param {NextRequest} request - The incoming request object.
+ * @returns {NextResponse} A response object.
+ */
+export async function POST(request: NextRequest) {
+  let storeId: string | null = null;
+  let currentStoreLineToken: string | null = null;
+
+  try {
     const body = await request.text();
     const signature = request.headers.get('x-line-signature') || '';
-    const channelSecret = process.env.LINE_MESSAGING_CHANNEL_SECRET!;
 
-    if (!channelSecret) {
+    // --- 1. Signature Validation ---
+    const channelSecretEnv = process.env.LINE_MESSAGING_CHANNEL_SECRET!;
+    if (!channelSecretEnv) {
       console.error("LINE_MESSAGING_CHANNEL_SECRET is not set.");
-      throw new Error("LINE_MESSAGING_CHANNEL_SECRET is not set in environment variables.");
+      return new NextResponse("Internal Server Error: Bot configuration is incomplete.", { status: 500 });
     }
-
-    const hash = crypto.createHmac('sha256', channelSecret).update(body).digest('base64');
+    const hash = crypto.createHmac('sha256', channelSecretEnv).update(body).digest('base64');
     if (hash !== signature) {
       return new NextResponse("Signature validation failed!", { status: 401 });
     }
 
+    // --- 2. Store Identification (Simplified and More Robust) ---
+    // Use a predefined STORE_ID from environment variables instead of relying on event.destination.
+    storeId = process.env.FIREBASE_STORE_ID!;
+    if (!storeId) {
+        console.error("FIREBASE_STORE_ID environment variable is not set.");
+        return new NextResponse("Internal Server Error: Bot configuration is incomplete.", { status: 500 });
+    }
+
+    const storeDoc = await db.collection('stores').doc(storeId).get();
+    if (!storeDoc.exists) {
+        console.error(`Configuration for store ID "${storeId}" not found in Firestore.`);
+        return new NextResponse("Internal Server Error: Bot configuration is incomplete.", { status: 500 });
+    }
+
+    const storeData = storeDoc.data();
+    currentStoreLineToken = storeData?.line_access_token;
+
+    if (!currentStoreLineToken) {
+        console.error(`LINE Access Token missing for store: ${storeId}`);
+        return new NextResponse("Internal Server Error: Bot configuration is incomplete.", { status: 500 });
+    }
+
+    // --- 3. Event Processing ---
+    await fetchMessagesFromFirestore(storeId);
     const events = JSON.parse(body).events;
+
     for (const event of events) {
-      if (event.type === 'message' && event.message.type === 'text' && event.source.userId) {
-        const userId = event.source.userId; 
-        const userMessage = event.message.text.trim().toLowerCase();
-        const replyToken = event.replyToken; 
-
-        // --- DEBUG LOG START ---
-        console.log("--- WEBHOOK DEBUG LOG ---");
-        console.log("Received message:", userMessage);
-        console.log("Using STORE_ID:", STORE_ID);
-        // --- DEBUG LOG END ---
-
-        // === LOGIC ใหม่: ตรวจสอบข้อความที่เข้ามา ===
-        // ขั้นตอนที่ 1: ลูกค้าเลือกประเภท (ซักผ้า/อบผ้า)
-        if (userMessage === "ซักผ้า") {
-            const machineConfigsCol = db.collection('stores').doc(STORE_ID).collection('machine_configs');
-            const q = machineConfigsCol.where('machine_type', '==', 'washer').where('is_active', '==', true);
-            const machineSnapshot = await q.get();
-
-            const washerButtons: QuickReplyItem[] = machineSnapshot.docs.map(doc => {
-                const data = doc.data();
-                return {
-                    type: 'action',
-                    action: { type: 'message', label: `เครื่อง ${data.machine_id}`, text: `ซักผ้า_เลือก_${data.machine_id}` }
-                };
-            });
-
-            if (washerButtons.length > 0) {
-                await replyMessage(replyToken, 'กรุณาเลือกหมายเลขเครื่องซักผ้าค่ะ', washerButtons);
-            } else {
-                await replyMessage(replyToken, 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องซักผ้าว่าง');
-            }
-
-        } else if (userMessage === "อบผ้า") {
-            const machineConfigsCol = db.collection('stores').doc(STORE_ID).collection('machine_configs');
-            const q = machineConfigsCol.where('machine_type', '==', 'dryer').where('is_active', '==', true);
-            const machineSnapshot = await q.get();
-
-            const dryerButtons: QuickReplyItem[] = machineSnapshot.docs.map(doc => {
-                const data = doc.data();
-                return {
-                    type: 'action',
-                    action: { type: 'message', label: `${data.duration_minutes} นาที`, text: `อบผ้า_เลือก_${data.machine_id}` }
-                };
-            });
-
-            if (dryerButtons.length > 0) {
-                await replyMessage(replyToken, 'กรุณาเลือกเวลาสำหรับเครื่องอบผ้าค่ะ', dryerButtons);
-            } else {
-                await replyMessage(replyToken, 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องอบผ้าว่าง');
-            }
-        } 
-        // ขั้นตอนที่ 2: ลูกค้าเลือกหมายเลขเครื่อง
-        else if (userMessage.startsWith("ซักผ้า_เลือก_")) {
-            const requestedMachineId = parseInt(userMessage.replace('ซักผ้า_เลือก_', ''), 10);
-            if (!isNaN(requestedMachineId)) {
-                const machineConfigsCol = db.collection('stores').doc(STORE_ID).collection('machine_configs');
-                const q = machineConfigsCol.where('machine_id', '==', requestedMachineId).where('machine_type', '==', 'washer').limit(1);
-                const machineSnapshot = await q.get();
-
-                if (!machineSnapshot.empty) {
-                    const machineConfigData = machineSnapshot.docs[0].data();
-                    if (machineConfigData.is_active) {
-                        await startTimer(userId, STORE_ID, 'washer', machineConfigData.machine_id, machineConfigData.duration_minutes, machineConfigData.display_name, replyToken);
-                    } else {
-                        await replyMessage(replyToken, messageTemplatesMap.get('machine_inactive')?.replace('{display_name}', machineConfigData.display_name) || 'เครื่องปิดใช้งานอยู่');
-                    }
-                } else {
-                    await replyMessage(replyToken, messageTemplatesMap.get('machine_not_found') || 'ไม่พบหมายเลขเครื่องซักผ้า');
-                }
-            } else {
-                await replyMessage(replyToken, messageTemplatesMap.get('machine_not_found') || 'ข้อมูลหมายเลขเครื่องซักผ้าไม่ถูกต้อง'); // Using machine_not_found for invalid input too
-            }
-        } else if (userMessage.startsWith("อบผ้า_เลือก_")) {
-            const requestedMachineId = parseInt(userMessage.replace('อบผ้า_เลือก_', ''), 10); // สำหรับเครื่องอบผ้า machine_id คือ duration (40, 50, 60)
-            if (!isNaN(requestedMachineId)) {
-                const machineConfigsCol = db.collection('stores').doc(STORE_ID).collection('machine_configs');
-                const q = machineConfigsCol.where('machine_id', '==', requestedMachineId).where('machine_type', '==', 'dryer').limit(1);
-                const machineSnapshot = await q.get();
-
-                if (!machineSnapshot.empty) {
-                    const machineConfigData = machineSnapshot.docs[0].data();
-                    if (machineConfigData.is_active) {
-                        await startTimer(userId, STORE_ID, 'dryer', machineConfigData.machine_id, machineConfigData.duration_minutes, machineConfigData.display_name, replyToken);
-                    } else {
-                         await replyMessage(replyToken, messageTemplatesMap.get('machine_inactive')?.replace('{display_name}', machineConfigData.display_name) || 'เครื่องปิดใช้งานอยู่');
-                    }
-                } else {
-                    await replyMessage(replyToken, messageTemplatesMap.get('machine_not_found') || 'ไม่พบเครื่องอบผ้า');
-                }
-            } else {
-                await replyMessage(replyToken, messageTemplatesMap.get('machine_not_found') || 'ข้อมูลเครื่องอบผ้าไม่ถูกต้อง'); // Using machine_not_found for invalid input too
-            }
+        // Basic validation to ensure we have a user to talk to.
+        if (!event.source || !event.source.userId) {
+            console.warn("Skipping event with no source or userId.", { eventType: event.type });
+            continue;
         }
-        // ขั้นตอนที่ 0: ข้อความทักทายครั้งแรก หรือข้อความที่ไม่รู้จัก
-        else {
+
+        // --- Main Logic for Handling User Events ---
+        if (event.type === 'follow') {
+            const replyToken = event.replyToken;
             const initialButtons: QuickReplyItem[] = [
                 { type: 'action', action: { type: 'message', label: 'ซักผ้า', text: 'ซักผ้า' } },
                 { type: 'action', action: { type: 'message', label: 'อบผ้า', text: 'อบผ้า' } }
             ];
-            // แก้ไขข้อความให้เด่นชัดขึ้น
-            await replyMessage(replyToken, messageTemplatesMap.get('initial_greeting') || 'สวัสดีค่ะ กรุณาเลือกบริการที่ต้องการค่ะ', initialButtons);
+            await replyMessage(replyToken, messagesMap.get('initial_greeting') || 'สวัสดีค่ะ กรุณาเลือกบริการที่ต้องการค่ะ', currentStoreLineToken, initialButtons);
+
+        } else if (event.type === 'message' && event.message.type === 'text') {
+            const userId = event.source.userId;
+            const userMessage = event.message.text.trim().toLowerCase();
+            const replyToken = event.replyToken;
+
+            if (userMessage === "ซักผ้า") {
+                const machineConfigsCol = db.collection('stores').doc(storeId).collection('machine_configs');
+                const q = machineConfigsCol.where('machine_type', '==', 'washer').where('is_active', '==', true);
+                const machineSnapshot = await q.get();
+
+                const washerButtons: QuickReplyItem[] = machineSnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return {
+                        type: 'action',
+                        action: { type: 'message', label: `เครื่อง ${data.machine_id}`, text: `ซักผ้า_เลือก_${data.machine_id}` }
+                    };
+                });
+
+                if (washerButtons.length > 0) {
+                    await replyMessage(replyToken, messagesMap.get('select_washer_message') || 'กรุณาเลือกหมายเลขเครื่องซักผ้าค่ะ', currentStoreLineToken, washerButtons);
+                } else {
+                    await replyMessage(replyToken, messagesMap.get('no_washer_available_message') || 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องซักผ้าว่าง', currentStoreLineToken);
+                }
+
+            } else if (userMessage === "อบผ้า") {
+                const machineConfigsCol = db.collection('stores').doc(storeId).collection('machine_configs');
+                const q = machineConfigsCol.where('machine_type', '==', 'dryer').where('is_active', '==', true);
+                const machineSnapshot = await q.get();
+
+                const dryerButtons: QuickReplyItem[] = machineSnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return {
+                        type: 'action',
+                        action: { type: 'message', label: `${data.duration_minutes} นาที`, text: `อบผ้า_เลือก_${data.machine_id}` }
+                    };
+                });
+
+                if (dryerButtons.length > 0) {
+                    await replyMessage(replyToken, messagesMap.get('select_dryer_message') || 'กรุณาเลือกเวลาสำหรับเครื่องอบผ้าค่ะ', currentStoreLineToken, dryerButtons);
+                } else {
+                    await replyMessage(replyToken, messagesMap.get('no_dryer_available_message') || 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องอบผ้าว่าง', currentStoreLineToken);
+                }
+
+            } else if (userMessage.startsWith("ซักผ้า_เลือก_")) {
+                const requestedMachineId = parseInt(userMessage.replace('ซักผ้า_เลือก_', ''), 10);
+                if (!isNaN(requestedMachineId)) {
+                    const machineConfigsCol = db.collection('stores').doc(storeId).collection('machine_configs');
+                    const q = machineConfigsCol.where('machine_id', '==', requestedMachineId).where('machine_type', '==', 'washer').limit(1);
+                    const machineSnapshot = await q.get();
+
+                    if (!machineSnapshot.empty) {
+                        const machineConfigData = machineSnapshot.docs[0].data();
+                        if (machineConfigData.is_active) {
+                            await startTimer(userId, storeId, 'washer', machineConfigData.machine_id, machineConfigData.duration_minutes, machineConfigData.display_name, replyToken, currentStoreLineToken);
+                        } else {
+                            await replyMessage(replyToken, messagesMap.get('machine_inactive')?.replace('{display_name}', machineConfigData.display_name) || 'เครื่องปิดใช้งานอยู่', currentStoreLineToken);
+                        }
+                    } else {
+                        await replyMessage(replyToken, messagesMap.get('machine_not_found') || 'ไม่พบหมายเลขเครื่องซักผ้าที่คุณเลือก', currentStoreLineToken);
+                    }
+                }
+
+            } else if (userMessage.startsWith("อบผ้า_เลือก_")) {
+                const requestedMachineId = parseInt(userMessage.replace('อบผ้า_เลือก_', ''), 10);
+                if (!isNaN(requestedMachineId)) {
+                    const machineConfigsCol = db.collection('stores').doc(storeId).collection('machine_configs');
+                    const q = machineConfigsCol.where('machine_id', '==', requestedMachineId).where('machine_type', '==', 'dryer').limit(1);
+                    const machineSnapshot = await q.get();
+
+                    if (!machineSnapshot.empty) {
+                        const machineConfigData = machineSnapshot.docs[0].data();
+                        if (machineConfigData.is_active) {
+                            await startTimer(userId, storeId, 'dryer', machineConfigData.machine_id, machineConfigData.duration_minutes, machineConfigData.display_name, replyToken, currentStoreLineToken);
+                        } else {
+                            await replyMessage(replyToken, messagesMap.get('machine_inactive')?.replace('{display_name}', machineConfigData.display_name) || 'เครื่องปิดใช้งานอยู่', currentStoreLineToken);
+                        }
+                    } else {
+                        await replyMessage(replyToken, messagesMap.get('machine_not_found') || 'ไม่พบเครื่องอบผ้าที่คุณเลือก', currentStoreLineToken);
+                    }
+                }
+            } else {
+                const initialButtons: QuickReplyItem[] = [
+                    { type: 'action', action: { type: 'message', label: 'ซักผ้า', text: 'ซักผ้า' } },
+                    { type: 'action', action: { type: 'message', label: 'อบผ้า', text: 'อบผ้า' } }
+                ];
+                await replyMessage(replyToken, messagesMap.get('initial_greeting') || 'สวัสดีค่ะ กรุณาเลือกบริการที่ต้องการค่ะ', currentStoreLineToken, initialButtons);
+            }
+        } else if (event.replyToken) {
+            await replyMessage(event.replyToken, messagesMap.get('non_text_message') || 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น', currentStoreLineToken);
         }
-      } else { // Handle non-text messages (e.g., sticker, image)
-        if (event.replyToken) {
-            await replyMessage(event.replyToken, messageTemplatesMap.get('non_text_message') || 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น');
-        }
-      }
     }
     return NextResponse.json({ status: "ok" });
-  } catch (error: unknown) { // แก้ไข: ระบุประเภท unknown สำหรับ catch error
-    console.error("Error in webhook handler:", error);
-    // In case of any unexpected error, try to reply a generic message
-    const fallbackReplyToken = (request.body as { events?: { replyToken?: string }[] })?.events?.[0]?.replyToken;
-    if (fallbackReplyToken) {
-        await replyMessage(fallbackReplyToken, messageTemplatesMap.get('generic_error') || 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
-    }
+  } catch (error: unknown) {
+    console.error("Critical error in webhook handler:", error);
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
