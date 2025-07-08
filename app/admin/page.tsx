@@ -547,8 +547,8 @@ export default function AdminPage() {
                             <td style={{ padding: '8px', fontSize: '0.9em' }}>{timer.user_id.substring(0, 8)}...</td>
                             <td style={{ padding: '8px' }}>{new Date(timer.end_time.seconds * 1000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
                             <td style={{ padding: '8px', textAlign: 'right' }}>
-                              <button 
-                                className="line-button" 
+                              <button
+                                className="line-button"
                                 style={{ backgroundColor: '#dc3545', padding: '6px 10px', fontSize: '0.8em' }}
                                 onClick={() => handleCancelTimer(timer.id, timer.display_name)}
                               >
@@ -602,15 +602,15 @@ export default function AdminPage() {
                             <td style={{ padding: '8px', textAlign: 'right' }}>
                               {editingMessageId === template.docId ? (
                                 <>
-                                  <button 
-                                    className="line-button" 
+                                  <button
+                                    className="line-button"
                                     style={{ backgroundColor: 'var(--line-green)', padding: '5px 8px', fontSize: '0.7em', marginRight: '5px' }}
                                     onClick={() => handleSaveMessageClick(template.docId)}
                                   >
                                     บันทึก
                                   </button>
-                                  <button 
-                                    className="line-button" 
+                                  <button
+                                    className="line-button"
                                     style={{ backgroundColor: '#6c757d', padding: '5px 8px', fontSize: '0.7em' }}
                                     onClick={handleCancelMessageEdit}
                                   >
@@ -618,8 +618,8 @@ export default function AdminPage() {
                                   </button>
                                 </>
                               ) : (
-                                <button 
-                                  className="line-button" 
+                                <button
+                                  className="line-button"
                                   style={{ backgroundColor: 'var(--primary-pink)', padding: '5px 8px', fontSize: '0.7em' }}
                                   onClick={() => handleEditMessageClick(template)}
                                 >
@@ -662,8 +662,8 @@ export default function AdminPage() {
                 }}
               />
               {error && <p style={{ color: '#dc3545', fontSize: '0.8em', marginBottom: '10px' }}>{error}</p>} {/* Adjusted font size */}
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 className="line-button"
                 style={{ backgroundColor: '#007bff', padding: '10px 20px', fontSize: '1em' }} {/* Adjusted padding/font size */}
               >
