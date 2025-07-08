@@ -33,11 +33,10 @@ interface QuickReplyItem {
   action: QuickReplyAction;
 }
 
-// --- NEW: Interfaces for LINE Webhook Event ---
+// --- Interfaces for LINE Webhook Event ---
 interface LineEventSource {
   type: 'user' | 'group' | 'room';
   userId?: string;
-  channelId?: string;
 }
 
 interface LineMessage {
@@ -51,6 +50,7 @@ interface LineEvent {
   source: LineEventSource;
   replyToken: string;
   message: LineMessage;
+  destination?: string; // CORRECTED: The bot's user ID is in 'destination'
 }
 
 
@@ -184,16 +184,16 @@ export async function POST(request: NextRequest) {
       const userMessage = event.message.text!.trim();
 
       // --- ส่วนสำคัญ: ค้นหาร้านค้าจาก LINE Channel ID ---
-      const channelIdFromLine = event.source.channelId;
-      if (!channelIdFromLine) {
-          console.error("Event is missing source.channelId");
+      const destination = event.destination; // CORRECTED: Get Channel ID from destination
+      if (!destination) {
+          console.error("Event is missing destination property.");
           continue;
       }
 
-      const storesQuery = await db.collection('stores').where('line_channel_id', '==', channelIdFromLine).limit(1).get();
+      const storesQuery = await db.collection('stores').where('line_channel_id', '==', destination).limit(1).get();
 
       if (storesQuery.empty) {
-        console.error(`Store not found for LINE Channel ID: ${channelIdFromLine}.`);
+        console.error(`Store not found for LINE Channel ID: ${destination}.`);
         // ไม่สามารถตอบกลับได้เพราะไม่รู้จะใช้ Token ไหน
         return new NextResponse("Store not configured", { status: 404 });
       }
