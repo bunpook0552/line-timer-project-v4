@@ -218,7 +218,7 @@ export default function AdminPage() {
     setAddingNewMachine(true);
     setNewMachineFormData({ // Reset form for new entry
       machine_id: '',
-      machine_type: 'washer', // Default to washer
+      machine_type: 'washer' as 'washer' | 'dryer',
       duration_minutes: '',
       is_active: true,
       display_name: ''
