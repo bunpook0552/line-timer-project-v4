@@ -1,8 +1,8 @@
-'use client';
+"use client"; // ต้องอยู่บรรทัดแรกสุดเสมอ
 
 import { useState, useEffect } from 'react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, collection, getDocs, doc, updateDoc, query, where } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, updateDoc, query, where, addDoc } from 'firebase/firestore';
 
 // === กำหนดค่า Firebase (ใช้ของโปรเจกต์คุณ) ===
 const firebaseConfig = {
@@ -68,6 +68,14 @@ export default function AdminPage() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null); // New editing state for messages
   const [editMachineFormData, setEditMachineFormData] = useState({ duration_minutes: 0, is_active: false }); // Renamed for clarity
   const [editMessageFormData, setEditMessageFormData] = useState(''); // New editing state for messages
+  const [addingNewMachine, setAddingNewMachine] = useState(false); // State for showing/hiding add new machine form
+  const [newMachineFormData, setNewMachineFormData] = useState({ // State for new machine form data
+    machine_id: '',
+    machine_type: 'washer' as 'washer' | 'dryer',
+    duration_minutes: '',
+    is_active: true,
+    display_name: ''
+  });
 
   const STORE_ID = 'laundry_1'; // <--- กำหนด ID ร้านค้าของคุณที่นี่ (ใช้สำหรับร้านแรก)
 
@@ -205,32 +213,6 @@ export default function AdminPage() {
     setEditingMachineId(null);
   };
 
-  // Function to handle cancelling an active timer
-  const handleCancelTimer = async (timerId: string, machineDisplayName: string) => {
-    if (window.confirm(`คุณแน่ใจหรือไม่ที่จะยกเลิกการจับเวลาของ ${machineDisplayName} (ID: ${timerId})?`)) {
-      try {
-        const response = await fetch('/api/admin/timers/cancel', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ timerId, storeId: STORE_ID }),
-        });
-
-        if (response.ok) {
-            alert(`ยกเลิกการจับเวลาของ ${machineDisplayName} เรียบร้อยแล้ว`);
-            await fetchActiveTimers(); // Refresh active timers
-        } else {
-            const errorData = await response.json();
-            alert(`ไม่สามารถยกเลิกได้: ${errorData.message || 'เกิดข้อผิดพลาด'}`);
-        }
-      } catch (err) {
-        console.error("Error cancelling timer:", err);
-        alert("เกิดข้อผิดพลาดในการยกเลิกการจับเวลา");
-      }
-    }
-  };
-
   // === NEW: Function to add new machine ===
   const handleAddMachineClick = () => {
     setAddingNewMachine(true);
@@ -294,7 +276,9 @@ export default function AdminPage() {
 
   // Function to handle cancelling an active timer
   const handleCancelTimer = async (timerId: string, machineDisplayName: string) => {
-    if (window.confirm(`คุณแน่ใจหรือไม่ที่จะยกเลิกการจับเวลาของ ${machineDisplayName} (ID: ${timerId})?`)) {
+    // IMPORTANT: Replace window.confirm with a custom modal UI for production
+    // This is a placeholder for demonstration purposes.
+    if (confirm(`คุณแน่ใจหรือไม่ที่จะยกเลิกการจับเวลาของ ${machineDisplayName} (ID: ${timerId})?`)) {
       try {
         const response = await fetch('/api/admin/timers/cancel', {
             method: 'POST',
@@ -305,14 +289,20 @@ export default function AdminPage() {
         });
 
         if (response.ok) {
+            // IMPORTANT: Replace alert with a custom message box UI for production
+            // This is a placeholder for demonstration purposes.
             alert(`ยกเลิกการจับเวลาของ ${machineDisplayName} เรียบร้อยแล้ว`);
             await fetchActiveTimers(); // Refresh active timers
         } else {
             const errorData = await response.json();
+            // IMPORTANT: Replace alert with a custom message box UI for production
+            // This is a placeholder for demonstration purposes.
             alert(`ไม่สามารถยกเลิกได้: ${errorData.message || 'เกิดข้อผิดพลาด'}`);
         }
       } catch (err) {
         console.error("Error cancelling timer:", err);
+        // IMPORTANT: Replace alert with a custom message box UI for production
+        // This is a placeholder for demonstration purposes.
         alert("เกิดข้อผิดพลาดในการยกเลิกการจับเวลา");
       }
     }
@@ -482,7 +472,7 @@ export default function AdminPage() {
                           type="number"
                           placeholder="เช่น 25, 40"
                           value={newMachineFormData.duration_minutes}
-                          onChange={(e) => setNewMachineFormData({ ...newMachineFormData.duration_minutes, duration_minutes: e.target.value })}
+                          onChange={(e) => setNewMachineFormData({ ...newMachineFormData, duration_minutes: e.target.value })}
                           style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
                       />
                       <label style={{ textAlign: 'left', fontWeight: 'bold' }}>ชื่อแสดงผล (หน้า Bot):</label>
@@ -645,8 +635,8 @@ export default function AdminPage() {
                 </div>
               )}
 
-            </div>
-          </div>
+            </div> {/* This is the closing div for the "card" */}
+          </div> {/* This is the closing div for the "container" */}
         );
       }
 
@@ -684,4 +674,3 @@ export default function AdminPage() {
         </div>
       );
     }
-    ```
