@@ -33,6 +33,27 @@ interface QuickReplyItem {
   action: QuickReplyAction;
 }
 
+// --- NEW: Interfaces for LINE Webhook Event ---
+interface LineEventSource {
+  type: 'user' | 'group' | 'room';
+  userId?: string;
+  channelId?: string;
+}
+
+interface LineMessage {
+  type: 'text' | 'sticker' | 'image' | 'video' | 'audio' | 'location' | 'file';
+  id: string;
+  text?: string;
+}
+
+interface LineEvent {
+  type: string;
+  source: LineEventSource;
+  replyToken: string;
+  message: LineMessage;
+}
+
+
 // --- ฟังก์ชันช่วยเหลือ (Helper Functions) ---
 
 /**
@@ -133,7 +154,7 @@ async function startTimer(userId: string, storeId: string, machineType: 'washer'
 
 // --- Route Handler หลักสำหรับ Webhook ---
 export async function POST(request: NextRequest) {
-  let events: any[] = [];
+  let events: LineEvent[] = [];
   try {
     const bodyText = await request.text();
     const signature = request.headers.get('x-line-signature') || '';
@@ -160,7 +181,7 @@ export async function POST(request: NextRequest) {
       
       const { replyToken } = event;
       const { userId } = event.source;
-      const userMessage = event.message.text.trim();
+      const userMessage = event.message.text!.trim();
 
       // --- ส่วนสำคัญ: ค้นหาร้านค้าจาก LINE Channel ID ---
       const channelIdFromLine = event.source.channelId;
