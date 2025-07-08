@@ -12,7 +12,7 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, 
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 // Initialize Firebase if not already initialized
@@ -62,7 +62,7 @@ export default function AdminPage() {
   const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
   const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([]); // New state for message templates
   const [loadingMachines, setLoadingMachines] = useState(true);
-  const [loadingTimers, setLoadingTimers] = useState(true);
+  const [loadingTimers, setLoadingTimers] = true;
   const [loadingMessages, setLoadingMessages] = useState(true); // New loading state for messages
   const [editingMachineId, setEditingMachineId] = useState<string | null>(null); // Renamed for clarity
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null); // New editing state for messages
@@ -85,7 +85,7 @@ export default function AdminPage() {
       fetchActiveTimers();
       fetchMessageTemplates(); // Fetch message templates when logged in
     }
-  }, [loggedIn]); 
+  }, [loggedIn]);
 
   // Function to fetch machine configurations
   const fetchMachineConfigs = async () => {
@@ -117,11 +117,11 @@ export default function AdminPage() {
     setLoadingTimers(true);
     try {
       const timersCol = collection(db, 'stores', STORE_ID, 'timers');
-      
+
       // *** CORRECTED FIREBASE QUERY SYNTAX ***
       const q = query(timersCol, where('status', '==', 'pending'));
       const activeTimersSnapshot = await getDocs(q);
-      
+
       const timerList = activeTimersSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -132,7 +132,7 @@ export default function AdminPage() {
         const dateB = new Date(b.end_time.seconds * 1000 + b.end_time.nanoseconds / 1000000);
         return dateA.getTime() - dateB.getTime();
       });
-      
+
       setActiveTimers(timerList);
     } catch (err: unknown) {
       console.error("Error fetching active timers:", err);
@@ -243,8 +243,8 @@ export default function AdminPage() {
       const machineConfigsCol = collection(db, 'stores', STORE_ID, 'machine_configs');
       // Check if machine_id already exists for the same type
       const existingMachine = await getDocs(query(
-        machineConfigsCol, 
-        where('machine_id', '==', parsedMachineId), 
+        machineConfigsCol,
+        where('machine_id', '==', parsedMachineId),
         where('machine_type', '==', newMachineFormData.machine_type)
       ));
       if (!existingMachine.empty) {
@@ -343,8 +343,8 @@ export default function AdminPage() {
           </h1>
           <p style={{ color: 'var(--text-dark)', marginBottom: '15px', fontSize: '0.9em' }}>จัดการการตั้งค่าเครื่องซักผ้า-อบผ้า และข้อความแจ้งเตือนของร้าน</p>
 
-          <button 
-            className="line-button" 
+          <button
+            className="line-button"
             style={{ backgroundColor: 'var(--dark-pink)', marginBottom: '20px', padding: '10px 20px', fontSize: '1em' }} {/* Reduced padding/font size */}
             onClick={() => setLoggedIn(false)} // Logout button
           >
@@ -402,23 +402,23 @@ export default function AdminPage() {
                                   style={{ transform: 'scale(1.2)' }}
                                 />
                               ) : (
-                                machine.is_active ? 
-                                  <span style={{ color: 'var(--line-green)', fontWeight: 'bold' }}>✅</span> : 
+                                machine.is_active ?
+                                  <span style={{ color: 'var(--line-green)', fontWeight: 'bold' }}>✅</span> :
                                   <span style={{ color: '#dc3545', fontWeight: 'bold' }}>❌</span>
                               )}
                             </td>
                             <td style={{ padding: '8px', textAlign: 'right' }}>
                               {editingMachineId === machine.id ? (
                                 <>
-                                  <button 
-                                    className="line-button" 
+                                  <button
+                                    className="line-button"
                                     style={{ backgroundColor: 'var(--line-green)', padding: '6px 10px', fontSize: '0.8em', marginRight: '5px' }}
                                     onClick={() => handleSaveMachineClick(machine.id)}
                                   >
                                     บันทึก
                                   </button>
-                                  <button 
-                                    className="line-button" 
+                                  <button
+                                    className="line-button"
                                     style={{ backgroundColor: '#6c757d', padding: '5px 8px', fontSize: '0.8em' }}
                                     onClick={handleCancelMachineEdit}
                                   >
@@ -426,8 +426,8 @@ export default function AdminPage() {
                                   </button>
                                 </>
                               ) : (
-                                <button 
-                                  className="line-button" 
+                                <button
+                                  className="line-button"
                                   style={{ backgroundColor: 'var(--primary-pink)', padding: '5px 8px', fontSize: '0.8em' }}
                                   onClick={() => handleEditMachineClick(machine)}
                                 >
@@ -459,7 +459,7 @@ export default function AdminPage() {
                           style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
                       />
                       <label style={{ textAlign: 'left', fontWeight: 'bold' }}>ประเภท:</label>
-                      <select 
+                      <select
                           value={newMachineFormData.machine_type}
                           onChange={(e) => setNewMachineFormData({ ...newMachineFormData, machine_type: e.target.value as 'washer' | 'dryer' })}
                           style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
@@ -490,18 +490,18 @@ export default function AdminPage() {
                           onChange={(e) => setNewMachineFormData({ ...newMachineFormData, is_active: e.target.checked })}
                           style={{ transform: 'scale(1.2)' }}
                       /> เปิดใช้งาน
-                      
+
                       <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
-                        <button 
-                          type="submit" 
-                          className="line-button" 
+                        <button
+                          type="submit"
+                          className="line-button"
                           style={{ backgroundColor: 'var(--line-green)', padding: '8px 15px', fontSize: '0.9em' }}
                         >
                           บันทึกเครื่องใหม่
                         </button>
-                        <button 
-                          type="button" 
-                          className="line-button" 
+                        <button
+                          type="button"
+                          className="line-button"
                           style={{ backgroundColor: '#6c757d', padding: '8px 15px', fontSize: '0.9em' }}
                           onClick={handleCancelNewMachine}
                         >
@@ -510,8 +510,8 @@ export default function AdminPage() {
                       </div>
                   </form>
               ) : (
-                  <button 
-                    className="line-button" 
+                  <button
+                    className="line-button"
                     style={{ backgroundColor: 'var(--primary-pink)', padding: '10px 20px', fontSize: '1em', marginTop: '20px' }}
                     onClick={handleAddMachineClick}
                   >
@@ -634,11 +634,10 @@ export default function AdminPage() {
                   )}
                 </div>
               )}
-
-            </div> {/* This is the closing div for the "card" */}
-          </div> {/* This is the closing div for the "container" */}
+            </div>
+          </div>
         );
-      }
+      } // <--- นี่คือตำแหน่งที่ถูกต้องของวงเล็บปิดของ if (loggedIn)
 
       // --- Admin Login Page Content ---
       return (
@@ -673,4 +672,4 @@ export default function AdminPage() {
           </div>
         </div>
       );
-    }
+    } // <--- นี่คือวงเล็บปิดของ export default function AdminPage()
