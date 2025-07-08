@@ -221,9 +221,17 @@ export async function POST(request: NextRequest) {
             console.warn("Bot does not support group/room chats. Skipping event.");
             continue;
         }
+
+        // Improved check for essential event properties with detailed logging.
         if (!event.source || !event.source.userId || !event.destination) {
-            console.error("Invalid LINE event: missing userId or destination channel ID.");
-            continue;
+            console.error("Invalid LINE event structure. Key properties missing.", {
+                eventType: event.type,
+                hasSource: !!event.source,
+                hasUserId: !!(event.source && event.source.userId),
+                hasDestination: !!event.destination,
+                event: JSON.stringify(event) // Log the full event for inspection
+            });
+            continue; // Skip this invalid event.
         }
 
         // Identify the store by matching the LINE Bot's User ID (destination) with a store in Firestore.
@@ -250,12 +258,21 @@ export async function POST(request: NextRequest) {
         // Fetch the latest message templates for the identified store.
         await fetchMessagesFromFirestore(storeId);
 
-        if (event.type === 'message' && event.message.type === 'text') {
+        // --- Main Logic for Handling User Events ---
+
+        if (event.type === 'follow') {
+            // Handle 'follow' event: when a user adds the bot as a friend.
+            const replyToken = event.replyToken;
+            const initialButtons: QuickReplyItem[] = [
+                { type: 'action', action: { type: 'message', label: 'ซักผ้า', text: 'ซักผ้า' } },
+                { type: 'action', action: { type: 'message', label: 'อบผ้า', text: 'อบผ้า' } }
+            ];
+            await replyMessage(replyToken, messagesMap.get('initial_greeting') || 'สวัสดีค่ะ กรุณาเลือกบริการที่ต้องการค่ะ', currentStoreLineToken, initialButtons);
+
+        } else if (event.type === 'message' && event.message.type === 'text') {
             const userId = event.source.userId;
             const userMessage = event.message.text.trim().toLowerCase();
             const replyToken = event.replyToken;
-
-            // --- Main Logic for Handling User Messages ---
 
             if (userMessage === "ซักผ้า") {
                 // User wants to use a washing machine.
@@ -345,9 +362,10 @@ export async function POST(request: NextRequest) {
                 await replyMessage(replyToken, messagesMap.get('initial_greeting') || 'สวัสดีค่ะ กรุณาเลือกบริการที่ต้องการค่ะ', currentStoreLineToken, initialButtons);
             }
         } else if (event.replyToken) {
-            // Handle non-text messages (e.g., sticker, image).
+            // Handle other messages with a replyToken (e.g., sticker, image).
             await replyMessage(event.replyToken, messagesMap.get('non_text_message') || 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น', currentStoreLineToken);
         }
+        // Events without a replyToken (like 'unfollow') will be gracefully ignored.
     }
     return NextResponse.json({ status: "ok" });
   } catch (error: unknown) {
