@@ -1,6 +1,4 @@
-// @ts-nocheck
-// Disabling TypeScript check for this file temporarily due to persistent build issues.
-// This is a last resort to get the deployment to pass.
+
 
 import { NextResponse, type NextRequest } from 'next/server';
 import admin from 'firebase-admin';
