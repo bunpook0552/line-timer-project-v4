@@ -351,4 +351,3 @@ async function fetchMessagesFromFirestore(storeId: string): Promise<void> {
         return new NextResponse("Internal Server Error", { status: 500 });
     }
 }
-`}
