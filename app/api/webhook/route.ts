@@ -50,7 +50,13 @@ interface LineEvent {
   source: LineEventSource;
   replyToken: string;
   message: LineMessage;
-  destination?: string; // CORRECTED: The bot's user ID is in 'destination'
+  // 'destination' is not in the event object itself.
+}
+
+// Interface for the entire Webhook Body
+interface LineWebhookBody {
+    destination: string;
+    events: LineEvent[];
 }
 
 
@@ -171,7 +177,63 @@ export async function POST(request: NextRequest) {
       return new NextResponse("Signature validation failed!", { status: 401 });
     }
 
-    events = JSON.parse(bodyText).events;
+    const webhookBody: LineWebhookBody = JSON.parse(bodyText);
+    const destination = webhookBody.destination; // CORRECTED: Get destination from the root of the body
+    events = webhookBody.events;
+
+    if (!destination) {
+        console.error("Webhook body is missing destination property.");
+        return NextResponse.json({ status: "ok" }); // Acknowledge the request but do nothing
+    }
+
+    // --- ส่วนสำคัญ: ค้นหาร้านค้าจาก LINE Channel ID (destination) ---
+    const storesQuery = await db.collection('stores').where('line_channel_id', '==', destination).limit(1).get();
+
+    if (storesQuery.empty) {
+      console.error(`Store not found for LINE Channel ID: ${destination}.`);
+      return new NextResponse("Store not configured", { status: 404 });
+    }
+
+    const storeDoc = storesQuery.docs[0];
+    const storeId = storeDoc.id;
+    const storeData = storeDoc.data();
+    const currentStoreLineToken = storeData.line_access_token;
+
+    if (!currentStoreLineToken) {
+      console.error(`LINE Access Token missing for store: ${storeId}`);
+      return new NextResponse("Store configuration error", { status: 500 });
+    }
+
+    // --- ดึงข้อความ Template ของร้านค้านั้นๆ จาก Firestore ---
+    const messagesMap = new Map<string, string>();
+    const templatesCol = db.collection('stores').doc(storeId).collection('message_templates');
+    const snapshot = await templatesCol.get();
+    
+    // กำหนดข้อความ Default หากไม่พบใน Firestore
+    const defaultMessages = {
+        'initial_greeting': 'สวัสดีค่ะ ร้านซัก-อบ ยินดีต้อนรับ 🙏\n\n📢 กรุณาเลือกบริการที่ต้องการด้านล่างนี้ได้เลยค่ะ!',
+        'start_timer_confirmation': 'รับทราบค่ะ! ✅\nเริ่มจับเวลา {duration} นาทีสำหรับ {display_name} แล้วค่ะ',
+        'machine_busy': 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังใช้งานอยู่ค่ะ',
+        'machine_inactive': 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังปิดใช้งานอยู่ค่ะ',
+        'machine_not_found': 'ขออภัยค่ะ ไม่พบหมายเลขเครื่องที่คุณระบุ',
+        'non_text_message': 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น',
+        'generic_error': 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง',
+        'select_washer_message': 'กรุณาเลือกหมายเลขเครื่องซักผ้าค่ะ',
+        'no_washer_available_message': 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องซักผ้าว่าง',
+        'select_dryer_message': 'กรุณาเลือกเวลาสำหรับเครื่องอบผ้าค่ะ',
+        'no_dryer_available_message': 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องอบผ้าว่าง',
+    };
+
+    if (snapshot.empty) {
+        console.warn(`No message templates found for store ${storeId}. Using default fallbacks.`);
+        Object.entries(defaultMessages).forEach(([key, value]) => messagesMap.set(key, value));
+    } else {
+        // ใส่ Default ก่อน แล้วทับด้วยค่าจาก DB
+        Object.entries(defaultMessages).forEach(([key, value]) => messagesMap.set(key, value));
+        snapshot.forEach(doc => {
+            messagesMap.set(doc.id, doc.data().text);
+        });
+    }
 
     for (const event of events) {
       // ข้าม event ที่ไม่ใช่ข้อความจาก user หรือมาจาก group/room
@@ -182,62 +244,6 @@ export async function POST(request: NextRequest) {
       const { replyToken } = event;
       const { userId } = event.source;
       const userMessage = event.message.text!.trim();
-
-      // --- ส่วนสำคัญ: ค้นหาร้านค้าจาก LINE Channel ID ---
-      const destination = event.destination; // CORRECTED: Get Channel ID from destination
-      if (!destination) {
-          console.error("Event is missing destination property.");
-          continue;
-      }
-
-      const storesQuery = await db.collection('stores').where('line_channel_id', '==', destination).limit(1).get();
-
-      if (storesQuery.empty) {
-        console.error(`Store not found for LINE Channel ID: ${destination}.`);
-        // ไม่สามารถตอบกลับได้เพราะไม่รู้จะใช้ Token ไหน
-        return new NextResponse("Store not configured", { status: 404 });
-      }
-
-      const storeDoc = storesQuery.docs[0];
-      const storeId = storeDoc.id;
-      const storeData = storeDoc.data();
-      const currentStoreLineToken = storeData.line_access_token;
-
-      if (!currentStoreLineToken) {
-        console.error(`LINE Access Token missing for store: ${storeId}`);
-        return new NextResponse("Store configuration error", { status: 500 });
-      }
-      
-      // --- ดึงข้อความ Template ของร้านค้านั้นๆ จาก Firestore ---
-      const messagesMap = new Map<string, string>();
-      const templatesCol = db.collection('stores').doc(storeId).collection('message_templates');
-      const snapshot = await templatesCol.get();
-      
-      // กำหนดข้อความ Default หากไม่พบใน Firestore
-      const defaultMessages = {
-          'initial_greeting': 'สวัสดีค่ะ ร้านซัก-อบ ยินดีต้อนรับ 🙏\n\n📢 กรุณาเลือกบริการที่ต้องการด้านล่างนี้ได้เลยค่ะ!',
-          'start_timer_confirmation': 'รับทราบค่ะ! ✅\nเริ่มจับเวลา {duration} นาทีสำหรับ {display_name} แล้วค่ะ',
-          'machine_busy': 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังใช้งานอยู่ค่ะ',
-          'machine_inactive': 'ขออภัยค่ะ 🙏\nเครื่อง {display_name} กำลังปิดใช้งานอยู่ค่ะ',
-          'machine_not_found': 'ขออภัยค่ะ ไม่พบหมายเลขเครื่องที่คุณระบุ',
-          'non_text_message': 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น',
-          'generic_error': 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง',
-          'select_washer_message': 'กรุณาเลือกหมายเลขเครื่องซักผ้าค่ะ',
-          'no_washer_available_message': 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องซักผ้าว่าง',
-          'select_dryer_message': 'กรุณาเลือกเวลาสำหรับเครื่องอบผ้าค่ะ',
-          'no_dryer_available_message': 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องอบผ้าว่าง',
-      };
-
-      if (snapshot.empty) {
-          console.warn(`No message templates found for store ${storeId}. Using default fallbacks.`);
-          Object.entries(defaultMessages).forEach(([key, value]) => messagesMap.set(key, value));
-      } else {
-          // ใส่ Default ก่อน แล้วทับด้วยค่าจาก DB
-          Object.entries(defaultMessages).forEach(([key, value]) => messagesMap.set(key, value));
-          snapshot.forEach(doc => {
-              messagesMap.set(doc.id, doc.data().text);
-          });
-      }
       
       // --- Logic การตอบโต้ตามข้อความจากผู้ใช้ ---
 
