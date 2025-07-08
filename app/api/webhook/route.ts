@@ -1,233 +1,683 @@
-import { NextResponse, type NextRequest } from 'next/server';
-import admin from 'firebase-admin';
-import crypto from 'crypto';
+'use client';
 
-// --- ส่วนเริ่มต้นการเชื่อมต่อ Firebase Admin SDK (สำหรับหลังบ้าน) ---
-if (!admin.apps.length) {
-  try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT!);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
-  } catch (e: unknown) { // แก้ไข: ระบุประเภท unknown สำหรับ catch error
-    console.error("Firebase Admin initialization error", e);
-  }
+import { useState, useEffect } from 'react';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getFirestore, collection, getDocs, doc, updateDoc, query, where, addDoc } from 'firebase/firestore';
+
+// === กำหนดค่า Firebase (ใช้ของโปรเจกต์คุณ) ===
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, 
+};
+
+// Initialize Firebase if not already initialized
+let firebaseApp;
+if (!getApps().length) {
+  firebaseApp = initializeApp(firebaseConfig);
+} else {
+  firebaseApp = getApp(); // if already initialized, use that one
 }
-const db = admin.firestore();
-// --- สิ้นสุดส่วนการเชื่อมต่อ ---
 
-// === กำหนด ID ร้านค้า (สำหรับร้านแรก) ===
-const STORE_ID = 'laundry_1';
+const db = getFirestore(firebaseApp);
 
-// กำหนด Type สำหรับ Quick Reply Item เพื่อความถูกต้องของ TypeScript
-interface QuickReplyAction {
-  type: 'message';
-  label: string;
+// === รหัสผ่านสำหรับเข้าหน้า Admin ===
+const ADMIN_PASSWORD = 'admin123'; // <--- คุณสามารถเปลี่ยนรหัสผ่านได้ที่นี่
+
+interface MachineConfig {
+  id: string; // Document ID from Firestore
+  machine_id: number;
+  machine_type: 'washer' | 'dryer';
+  duration_minutes: number;
+  is_active: boolean;
+  display_name: string;
+}
+
+interface ActiveTimer {
+  id: string; // Document ID from Firestore (timers collection)
+  user_id: string;
+  machine_id: number;
+  machine_type: 'washer' | 'dryer';
+  display_name: string;
+  duration_minutes: number;
+  end_time: { seconds: number; nanoseconds: number; }; // Firestore Timestamp
+  status: string;
+}
+
+interface MessageTemplate {
+  docId: string; // Document ID in Firestore
+  id: string; // Custom ID from database (e.g., 'initial_greeting')
   text: string;
 }
 
-interface QuickReplyItem {
-  type: 'action';
-  action: QuickReplyAction;
+// === NEW: Interface for the new machine form ===
+interface NewMachineForm {
+  machine_id: string | number;
+  machine_type: 'washer' | 'dryer';
+  duration_minutes: string | number;
+  is_active: boolean;
+  display_name: string;
 }
 
-// ฟังก์ชันสำหรับส่งข้อความตอบกลับพร้อมปุ่ม Quick Reply
-async function replyMessage(replyToken: string, text: string, quickReplyItems?: QuickReplyItem[]) {
-  const replyUrl = 'https://api.line.me/v2/bot/message/reply';
-  const accessToken = process.env.LINE_MESSAGING_TOKEN!;
+export default function AdminPage() {
+  const [password, setPassword] = useState('');
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [error, setError] = useState('');
+  const [machines, setMachines] = useState<MachineConfig[]>([]);
+  const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
+  const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([]); // New state for message templates
+  const [loadingMachines, setLoadingMachines] = useState(true);
+  const [loadingTimers, setLoadingTimers] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(true); // New loading state for messages
+  const [editingMachineId, setEditingMachineId] = useState<string | null>(null); // Renamed for clarity
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null); // New editing state for messages
+  const [editMachineFormData, setEditMachineFormData] = useState({ duration_minutes: 0, is_active: false }); // Renamed for clarity
+  const [editMessageFormData, setEditMessageFormData] = useState(''); // New editing state for messages
 
-  const messagePayload: {
-    replyToken: string;
-    messages: Array<{
-      type: 'text';
-      text: string;
-      quickReply?: { items: QuickReplyItem[] };
-    }>;
-  } = {
-    replyToken: replyToken,
-    messages: [{ type: 'text', text: text }],
+  // NEW: State for adding new machine
+  const [addingNewMachine, setAddingNewMachine] = useState(false);
+  const [newMachineFormData, setNewMachineFormData] = useState<NewMachineForm>({
+    machine_id: '',
+    machine_type: 'washer', // Default to washer
+    duration_minutes: '',
+    is_active: true,
+    display_name: ''
+  });
+
+
+  const STORE_ID = 'laundry_1'; // <--- กำหนด ID ร้านค้าของคุณที่นี่ (ใช้สำหรับร้านแรก)
+
+  useEffect(() => {
+    if (loggedIn) {
+      fetchMachineConfigs();
+      fetchActiveTimers();
+      fetchMessageTemplates(); // Fetch message templates when logged in
+    }
+  }, [loggedIn]); 
+
+  // Function to fetch machine configurations
+  const fetchMachineConfigs = async () => {
+    setLoadingMachines(true);
+    try {
+      const machineConfigsCol = collection(db, 'stores', STORE_ID, 'machine_configs');
+      const machineSnapshot = await getDocs(machineConfigsCol);
+      const machineList = machineSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as MachineConfig[];
+      machineList.sort((a, b) => {
+          if (a.machine_type === b.machine_type) {
+              return a.machine_id - b.machine_id;
+          }
+          return a.machine_type.localeCompare(b.machine_type);
+      });
+      setMachines(machineList);
+    } catch (err) {
+      console.error("Error fetching machine configs:", err);
+      setError("ไม่สามารถดึงข้อมูลการตั้งค่าเครื่องได้");
+    } finally {
+      setLoadingMachines(false);
+    }
   };
 
-  if (quickReplyItems && quickReplyItems.length > 0) {
-    messagePayload.messages[0].quickReply = { items: quickReplyItems };
-  }
+  // Function to fetch active timers
+  const fetchActiveTimers = async () => {
+    setLoadingTimers(true);
+    try {
+      const timersCol = collection(db, 'stores', STORE_ID, 'timers');
+      
+      // *** CORRECTED FIREBASE QUERY SYNTAX ***
+      const q = query(timersCol, where('status', '==', 'pending'));
+      const activeTimersSnapshot = await getDocs(q);
+      
+      const timerList = activeTimersSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as ActiveTimer[];
 
-  const response = await fetch(replyUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(messagePayload),
-  });
-  if (!response.ok) {
-    console.error("Failed to send reply message:", await response.json());
-  }
-}
+      timerList.sort((a, b) => {
+        const dateA = new Date(a.end_time.seconds * 1000 + a.end_time.nanoseconds / 1000000);
+        const dateB = new Date(b.end_time.seconds * 1000 + b.end_time.nanoseconds / 1000000);
+        return dateA.getTime() - dateB.getTime();
+      });
+      
+      setActiveTimers(timerList);
+    } catch (err: unknown) {
+      console.error("Error fetching active timers:", err);
+      if (typeof err === 'object' && err !== null && 'code' in err && 'details' in err) {
+        const firebaseError = err as { code: string, details: string };
+        if (firebaseError.code === 'failed-precondition' && firebaseError.details.includes('requires an index')) {
+          setError("Firebase Index สำหรับรายการที่กำลังทำงานยังไม่ถูกสร้าง กรุณาสร้างตามคำแนะนำใน Console Log");
+        } else {
+          setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
+        }
+      } else {
+        setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
+      }
+    } finally {
+      setLoadingTimers(false);
+    }
+  };
 
-// ฟังก์ชันสำหรับเริ่มจับเวลาและบันทึกลง DB
-async function startTimer(userId: string, storeId: string, machineType: 'washer' | 'dryer', machineId: number, duration: number, displayName: string, replyToken: string) {
-    const endTime = new Date(Date.now() + duration * 60 * 1000);
+  // === NEW: Function to fetch message templates ===
+  const fetchMessageTemplates = async () => {
+    setLoadingMessages(true);
+    try {
+      const templatesCol = collection(db, 'stores', STORE_ID, 'message_templates');
+      const templateSnapshot = await getDocs(templatesCol);
+      const templateList = templateSnapshot.docs.map(doc => ({
+        docId: doc.id, // Store Firestore's document ID
+        ...doc.data()
+      })) as MessageTemplate[];
+      // Sort alphabetically by custom 'id' for consistent display
+      templateList.sort((a, b) => a.id.localeCompare(b.id));
+      setMessageTemplates(templateList);
+    } catch (err) {
+      console.error("Error fetching message templates:", err);
+      setError("ไม่สามารถดึงข้อมูลข้อความแจ้งเตือนได้");
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
 
-    // === ตรวจสอบสถานะเครื่องว่าง/ไม่ว่าง ก่อนบันทึก ===
-    const existingTimersQuery = await db.collection('stores').doc(storeId).collection('timers')
-        .where('machine_id', '==', machineId)
-        .where('machine_type', '==', machineType)
-        .where('status', '==', 'pending')
-        .get();
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === ADMIN_PASSWORD) {
+      setLoggedIn(true);
+      setError('');
+    } else {
+      setError('รหัสผ่านไม่ถูกต้อง');
+      setLoggedIn(false);
+    }
+  };
 
-    if (!existingTimersQuery.empty) {
-        await replyMessage(replyToken, `ขออภัยค่ะ 🙏\nเครื่อง ${displayName} กำลังใช้งานอยู่ค่ะ`);
+  // Function to handle edit machine config click
+  const handleEditMachineClick = (machine: MachineConfig) => {
+    setEditingMachineId(machine.id);
+    setEditMachineFormData({
+      duration_minutes: machine.duration_minutes,
+      is_active: machine.is_active,
+    });
+  };
+
+  // Function to handle saving machine config
+  const handleSaveMachineClick = async (machineDocId: string) => {
+    try {
+      const machineRef = doc(db, 'stores', STORE_ID, 'machine_configs', machineDocId);
+      await updateDoc(machineRef, {
+        duration_minutes: editMachineFormData.duration_minutes,
+        is_active: editMachineFormData.is_active,
+      });
+      await fetchMachineConfigs(); // Refresh data
+      setEditingMachineId(null); // Exit editing mode
+    } catch (err) {
+      console.error("Error updating machine config:", err);
+      setError("ไม่สามารถบันทึกการเปลี่ยนแปลงได้");
+    }
+  };
+
+  // Function to handle cancelling machine edit
+  const handleCancelMachineEdit = () => {
+    setEditingMachineId(null);
+  };
+
+  // === NEW: Function to add new machine ===
+  const handleAddMachineClick = () => {
+    setAddingNewMachine(true);
+    setNewMachineFormData({ // Reset form for new entry
+      machine_id: '',
+      machine_type: 'washer', // Default to washer
+      duration_minutes: '',
+      is_active: true,
+      display_name: ''
+    });
+  };
+
+  const handleSaveNewMachine = async (e: React.FormEvent) => {
+    e.preventDefault();
+    // Basic validation
+    if (!newMachineFormData.machine_id || !newMachineFormData.display_name || !newMachineFormData.duration_minutes) {
+      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+      return;
+    }
+    const parsedMachineId = parseInt(String(newMachineFormData.machine_id), 10);
+    const parsedDuration = parseInt(String(newMachineFormData.duration_minutes), 10);
+    if (isNaN(parsedMachineId) || parsedMachineId <= 0 || isNaN(parsedDuration) || parsedDuration <= 0) {
+        alert('หมายเลขเครื่องและเวลาต้องเป็นตัวเลขที่ถูกต้องและมากกว่า 0');
         return;
     }
 
-    // บันทึกข้อมูลลง Firestore (timers sub-collection ภายใต้ Store ID)
-    await db.collection('stores').doc(storeId).collection('timers').add({
-        user_id: userId,
-        machine_id: machineId,
-        machine_type: machineType,
-        display_name: displayName,
-        duration_minutes: duration,
-        end_time: admin.firestore.Timestamp.fromDate(endTime),
-        status: 'pending',
-        created_at: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    try {
+      const machineConfigsCol = collection(db, 'stores', STORE_ID, 'machine_configs');
+      // Check if machine_id already exists for the same type
+      const existingMachine = await getDocs(query(
+        machineConfigsCol, 
+        where('machine_id', '==', parsedMachineId), 
+        where('machine_type', '==', newMachineFormData.machine_type)
+      ));
+      if (!existingMachine.empty) {
+          alert(`เครื่องประเภท ${newMachineFormData.machine_type} หมายเลข ${parsedMachineId} มีอยู่ในระบบแล้ว`);
+          return;
+      }
 
-    await replyMessage(replyToken, `รับทราบค่ะ! ✅\nเริ่มจับเวลา ${duration} นาทีสำหรับ ${displayName} แล้วค่ะ`);
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.text();
-    const signature = request.headers.get('x-line-signature') || '';
-    const channelSecret = process.env.LINE_MESSAGING_CHANNEL_SECRET!;
-
-    if (!channelSecret) {
-      throw new Error("LINE_MESSAGING_CHANNEL_SECRET is not set in environment variables.");
+      await addDoc(machineConfigsCol, {
+        machine_id: parsedMachineId,
+        machine_type: newMachineFormData.machine_type,
+        duration_minutes: parsedDuration,
+        is_active: newMachineFormData.is_active,
+        display_name: newMachineFormData.display_name
+      });
+      alert('เพิ่มเครื่องใหม่เรียบร้อยแล้ว');
+      setAddingNewMachine(false); // Close the form
+      await fetchMachineConfigs(); // Refresh the list
+    } catch (err) {
+      console.error("Error adding new machine:", err);
+      setError("ไม่สามารถเพิ่มเครื่องใหม่ได้");
     }
+  };
 
-    const hash = crypto.createHmac('sha256', channelSecret).update(body).digest('base64');
-    if (hash !== signature) {
-      return new NextResponse("Signature validation failed!", { status: 401 });
-    }
+  const handleCancelNewMachine = () => {
+    setAddingNewMachine(false);
+  };
+  // === END NEW: Function to add new machine ===
 
-    const events = JSON.parse(body).events;
-    for (const event of events) {
-      if (event.type === 'message' && event.message.type === 'text' && event.source.userId) {
-        const userId = event.source.userId;
-        const userMessage = event.message.text.trim().toLowerCase();
-        const replyToken = event.replyToken;
 
-        // --- DEBUG LOG START ---
-        console.log("--- WEBHOOK DEBUG LOG ---");
-        console.log("Received message:", userMessage);
-        console.log("Using STORE_ID:", STORE_ID);
-        // --- DEBUG LOG END ---
+  // Function to handle cancelling an active timer
+  const handleCancelTimer = async (timerId: string, machineDisplayName: string) => {
+    if (window.confirm(`คุณแน่ใจหรือไม่ที่จะยกเลิกการจับเวลาของ ${machineDisplayName} (ID: ${timerId})?`)) {
+      try {
+        const response = await fetch('/api/admin/timers/cancel', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ timerId, storeId: STORE_ID }),
+        });
 
-        // === LOGIC ใหม่: ตรวจสอบข้อความที่เข้ามา ===
-        // ขั้นตอนที่ 1: ลูกค้าเลือกประเภท (ซักผ้า/อบผ้า)
-        if (userMessage === "ซักผ้า") {
-            const machineConfigsCol = db.collection('stores').doc(STORE_ID).collection('machine_configs');
-            const q = machineConfigsCol.where('machine_type', '==', 'washer').where('is_active', '==', true);
-            const machineSnapshot = await q.get();
-
-            const washerButtons: QuickReplyItem[] = machineSnapshot.docs.map(doc => {
-                const data = doc.data();
-                return {
-                    type: 'action',
-                    action: { type: 'message', label: `เครื่อง ${data.machine_id}`, text: `ซักผ้า_เลือก_${data.machine_id}` }
-                };
-            });
-
-            if (washerButtons.length > 0) {
-                await replyMessage(replyToken, 'กรุณาเลือกหมายเลขเครื่องซักผ้าค่ะ', washerButtons);
-            } else {
-                await replyMessage(replyToken, 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องซักผ้าว่าง');
-            }
-
-        } else if (userMessage === "อบผ้า") {
-            const machineConfigsCol = db.collection('stores').doc(STORE_ID).collection('machine_configs');
-            const q = machineConfigsCol.where('machine_type', '==', 'dryer').where('is_active', '==', true);
-            const machineSnapshot = await q.get();
-
-            const dryerButtons: QuickReplyItem[] = machineSnapshot.docs.map(doc => {
-                const data = doc.data();
-                return {
-                    type: 'action',
-                    action: { type: 'message', label: `${data.duration_minutes} นาที`, text: `อบผ้า_เลือก_${data.machine_id}` }
-                };
-            });
-
-            if (dryerButtons.length > 0) {
-                await replyMessage(replyToken, 'กรุณาเลือกเวลาสำหรับเครื่องอบผ้าค่ะ', dryerButtons);
-            } else {
-                await replyMessage(replyToken, 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องอบผ้าว่าง');
-            }
+        if (response.ok) {
+            alert(`ยกเลิกการจับเวลาของ ${machineDisplayName} เรียบร้อยแล้ว`);
+            await fetchActiveTimers(); // Refresh active timers
+        } else {
+            const errorData = await response.json();
+            alert(`ไม่สามารถยกเลิกได้: ${errorData.message || 'เกิดข้อผิดพลาด'}`);
         }
-        // ขั้นตอนที่ 2: ลูกค้าเลือกหมายเลขเครื่อง
-        else if (userMessage.startsWith("ซักผ้า_เลือก_")) {
-            const requestedMachineId = parseInt(userMessage.replace('ซักผ้า_เลือก_', ''), 10);
-            if (!isNaN(requestedMachineId)) {
-                const machineConfigsCol = db.collection('stores').doc(STORE_ID).collection('machine_configs');
-                const q = machineConfigsCol.where('machine_id', '==', requestedMachineId).where('machine_type', '==', 'washer').limit(1);
-                const machineSnapshot = await q.get();
-
-                if (!machineSnapshot.empty) {
-                    const machineConfigData = machineSnapshot.docs[0].data();
-                    if (machineConfigData.is_active) {
-                        await startTimer(userId, STORE_ID, 'washer', machineConfigData.machine_id, machineConfigData.duration_minutes, machineConfigData.display_name, replyToken);
-                    } else {
-                        await replyMessage(replyToken, `ขออภัยค่ะ 🙏\nเครื่อง ${machineConfigData.display_name} กำลังปิดใช้งานอยู่ค่ะ`);
-                    }
-                } else {
-                    await replyMessage(replyToken, 'ไม่พบหมายเลขเครื่องซักผ้าที่คุณเลือก');
-                }
-            } else {
-                await replyMessage(replyToken, 'ข้อมูลหมายเลขเครื่องซักผ้าไม่ถูกต้อง');
-            }
-        } else if (userMessage.startsWith("อบผ้า_เลือก_")) {
-            const requestedMachineId = parseInt(userMessage.replace('อบผ้า_เลือก_', ''), 10); // สำหรับเครื่องอบผ้า machine_id คือ duration (40, 50, 60)
-            if (!isNaN(requestedMachineId)) {
-                const machineConfigsCol = db.collection('stores').doc(STORE_ID).collection('machine_configs');
-                const q = machineConfigsCol.where('machine_id', '==', requestedMachineId).where('machine_type', '==', 'dryer').limit(1);
-                const machineSnapshot = await q.get();
-
-                if (!machineSnapshot.empty) {
-                    const machineConfigData = machineSnapshot.docs[0].data();
-                    if (machineConfigData.is_active) {
-                        await startTimer(userId, STORE_ID, 'dryer', machineConfigData.machine_id, machineConfigData.duration_minutes, machineConfigData.display_name, replyToken);
-                    } else {
-                         await replyMessage(replyToken, `ขออภัยค่ะ 🙏\nเครื่อง ${machineConfigData.display_name} กำลังปิดใช้งานอยู่ค่ะ`);
-                    }
-                } else {
-                    await replyMessage(replyToken, 'ไม่พบเครื่องอบผ้าที่คุณเลือก');
-                }
-            } else {
-                await replyMessage(replyToken, 'ข้อมูลเครื่องอบผ้าไม่ถูกต้อง');
-            }
-        }
-        // ขั้นตอนที่ 0: ข้อความทักทายครั้งแรก หรือข้อความที่ไม่รู้จัก
-        else {
-            const initialButtons: QuickReplyItem[] = [
-                { type: 'action', action: { type: 'message', label: 'ซักผ้า', text: 'ซักผ้า' } },
-                { type: 'action', action: { type: 'message', label: 'อบผ้า', text: 'อบผ้า' } }
-            ];
-            await replyMessage(replyToken, 'สวัสดีค่ะ ร้านซัก-อบ ยินดีต้อนรับ 🙏\nกรุณาเลือกบริการที่ต้องการค่ะ', initialButtons);
-        }
-      } else { // Handle non-text messages (e.g., sticker, image)
-        if (event.replyToken) {
-            await replyMessage(event.replyToken, 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น');
-        }
+      } catch (err) {
+        console.error("Error cancelling timer:", err);
+        alert("เกิดข้อผิดพลาดในการยกเลิกการจับเวลา");
       }
     }
-    return NextResponse.json({ status: "ok" });
-  } catch (error: unknown) { // แก้ไข: ระบุประเภท unknown สำหรับ catch error
-    console.error("Error in webhook handler:", error);
-    // In case of any unexpected error, try to reply a generic message
-    const fallbackReplyToken = (request.body as { events?: { replyToken?: string }[] })?.events?.[0]?.replyToken;
-    if (fallbackReplyToken) {
-        await replyMessage(fallbackReplyToken, 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
+  };
+
+  // === NEW: Message Template Management Functions ===
+  const handleEditMessageClick = (template: MessageTemplate) => {
+    setEditingMessageId(template.docId);
+    setEditMessageFormData(template.text);
+  };
+
+  const handleSaveMessageClick = async (templateDocId: string) => {
+    try {
+      const templateRef = doc(db, 'stores', STORE_ID, 'message_templates', templateDocId);
+      await updateDoc(templateRef, {
+        text: editMessageFormData,
+      });
+      await fetchMessageTemplates(); // Refresh data
+      setEditingMessageId(null); // Exit editing mode
+    } catch (err) {
+      console.error("Error updating message template:", err);
+      setError("ไม่สามารถบันทึกข้อความได้");
     }
-    return new NextResponse("Internal Server Error", { status: 500 });
-  }
-}
+  };
+
+  const handleCancelMessageEdit = () => {
+    setEditingMessageId(null);
+  };
+
+  // --- Admin Page Content (after login) ---
+  if (loggedIn) {
+    return (
+      <div className="container" style={{ maxWidth: '100%', padding: '10px', margin: '10px auto' }}> {/* Reduced max-width, padding, margin for mobile */}
+        <div className="card">
+          <h1 style={{ color: 'var(--primary-pink)', fontSize: '1.8em' }}> {/* Reduced font size */}
+            <span style={{ fontSize: '1.5em', verticalAlign: 'middle', marginRight: '10px' }}>⚙️</span>
+            แผงควบคุมผู้ดูแล
+          </h1>
+          <p style={{ color: 'var(--text-dark)', marginBottom: '15px', fontSize: '0.9em' }}>จัดการการตั้งค่าเครื่องซักผ้า-อบผ้า และข้อความแจ้งเตือนของร้าน</p>
+
+          <button 
+            className="line-button" 
+            style={{ backgroundColor: 'var(--dark-pink)', marginBottom: '20px', padding: '10px 20px', fontSize: '1em' }} {/* Reduced padding/font size */}
+            onClick={() => setLoggedIn(false)} // Logout button
+          >
+            <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🚪</span>
+            ออกจากระบบ
+          </button>
+
+          {error && <p style={{ color: '#dc3545', marginBottom: '15px', fontWeight: 'bold', fontSize: '0.9em' }}>{error}</p>} {/* Reduced font size */}
+
+          {/* Machine Configurations Section */}
+          <h2 style={{ color: 'var(--dark-pink)', marginTop: '20px', marginBottom: '15px', fontSize: '1.4em' }}> {/* Reduced font size */}
+            <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🔧</span>
+            การตั้งค่าเครื่องซักผ้า
+          </h2>
+          {loadingMachines ? (
+            <p style={{ fontSize: '0.9em' }}>กำลังโหลดข้อมูลเครื่องจักร...</p>
+          ) : (
+            <div className="machine-list" style={{ textAlign: 'left', overflowX: 'auto' }}> {/* Added overflowX for tables on mobile */}
+              {machines.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#777', fontSize: '0.9em' }}>ไม่พบข้อมูลเครื่องจักร</p>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}> {/* Reduced font size */}
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>ประเภท</th>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เวลา (นาที)</th>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--text-dark)' }}>ใช้งาน</th>
+                      <th style={{ padding: '8px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {machines.map(machine => (
+                      <tr key={machine.id} style={{ borderBottom: '1px dashed #eee' }}>
+                        <td style={{ padding: '8px', fontWeight: 'bold' }}>{machine.display_name}</td>
+                        <td style={{ padding: '8px' }}>{machine.machine_type === 'washer' ? 'ซักผ้า' : 'อบผ้า'}</td>
+                        <td style={{ padding: '8px' }}>
+                          {editingMachineId === machine.id ? (
+                            <input
+                              type="number"
+                              value={editMachineFormData.duration_minutes}
+                              onChange={(e) => setEditMachineFormData({ ...editMachineFormData, duration_minutes: parseInt(e.target.value) || 0 })}
+                              style={{ width: '60px', padding: '4px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.9em' }}
+                            />
+                          ) : (
+                                machine.duration_minutes
+                              )}
+                            </td>
+                            <td style={{ padding: '8px' }}>
+                              {editingMachineId === machine.id ? (
+                                <input
+                                  type="checkbox"
+                                  checked={editMachineFormData.is_active}
+                                  // === FIXED: Changed setNewMachineFormData to setEditMachineFormData ===
+                                  onChange={(e) => setEditMachineFormData({ ...editMachineFormData, is_active: e.target.checked })}
+                                  style={{ transform: 'scale(1.2)' }}
+                                />
+                              ) : (
+                                machine.is_active ? 
+                                  <span style={{ color: 'var(--line-green)', fontWeight: 'bold' }}>✅</span> : 
+                                  <span style={{ color: '#dc3545', fontWeight: 'bold' }}>❌</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '8px', textAlign: 'right' }}>
+                              {editingMachineId === machine.id ? (
+                                <>
+                                  <button 
+                                    className="line-button" 
+                                    style={{ backgroundColor: 'var(--line-green)', padding: '6px 10px', fontSize: '0.8em', marginRight: '5px' }}
+                                    onClick={() => handleSaveMachineClick(machine.id)}
+                                  >
+                                    บันทึก
+                                  </button>
+                                  <button 
+                                    className="line-button" 
+                                    style={{ backgroundColor: '#6c757d', padding: '6px 10px', fontSize: '0.8em' }}
+                                    onClick={handleCancelMachineEdit}
+                                  >
+                                    ยกเลิก
+                                  </button>
+                                </>
+                              ) : (
+                                <button 
+                                  className="line-button" 
+                                  style={{ backgroundColor: 'var(--primary-pink)', padding: '5px 8px', fontSize: '0.8em' }}
+                                  onClick={() => handleEditMachineClick(machine)}
+                                >
+                                  แก้ไข
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+
+              {/* Add New Machine Section */}
+              <h2 style={{ color: 'var(--dark-pink)', marginTop: '30px', marginBottom: '15px', fontSize: '1.4em' }}>
+                <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>➕</span>
+                เพิ่มเครื่องใหม่
+              </h2>
+              {addingNewMachine ? (
+                  <form onSubmit={handleSaveNewMachine} style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '350px', margin: '0 auto', fontSize: '0.9em', padding: '15px', border: '1px solid #eee', borderRadius: '8px' }}>
+                      <label style={{ textAlign: 'left', fontWeight: 'bold' }}>หมายเลขเครื่อง (ID):</label>
+                      <input
+                          type="number"
+                          placeholder="เช่น 1, 5, 10"
+                          value={newMachineFormData.machine_id}
+                          onChange={(e) => setNewMachineFormData({ ...newMachineFormData, machine_id: parseInt(e.target.value) || '' })}
+                          style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
+                      />
+                      <label style={{ textAlign: 'left', fontWeight: 'bold' }}>ประเภท:</label>
+                      <select 
+                          value={newMachineFormData.machine_type}
+                          onChange={(e) => setNewMachineFormData({ ...newMachineFormData, machine_type: e.target.value as 'washer' | 'dryer' })}
+                          style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
+                      >
+                          <option value="washer">ซักผ้า</option>
+                          <option value="dryer">อบผ้า</option>
+                      </select>
+                      <label style={{ textAlign: 'left', fontWeight: 'bold' }}>เวลาที่ใช้ (นาที):</label>
+                      <input
+                          type="number"
+                          placeholder="เช่น 25, 40"
+                          value={newMachineFormData.duration_minutes}
+                          // === FIXED: Corrected the state update logic ===
+                          onChange={(e) => setNewMachineFormData({ ...newMachineFormData, duration_minutes: parseInt(e.target.value) || '' })}
+                          style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
+                      />
+                      <label style={{ textAlign: 'left', fontWeight: 'bold' }}>ชื่อแสดงผล (หน้า Bot):</label>
+                      <input
+                          type="text"
+                          placeholder="เช่น เครื่องซักผ้า #5, เครื่องอบผ้า (40 นาที)"
+                          value={newMachineFormData.display_name}
+                          onChange={(e) => setNewMachineFormData({ ...newMachineFormData, display_name: e.target.value })}
+                          style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
+                      />
+                      <label style={{ textAlign: 'left', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={newMachineFormData.is_active}
+                          onChange={(e) => setNewMachineFormData({ ...newMachineFormData, is_active: e.target.checked })}
+                          style={{ transform: 'scale(1.2)', marginRight: '8px' }}
+                        />
+                        เปิดใช้งาน
+                      </label>
+                      
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
+                        <button 
+                          type="submit" 
+                          className="line-button" 
+                          style={{ backgroundColor: 'var(--line-green)', padding: '8px 15px', fontSize: '0.9em' }}
+                        >
+                          บันทึกเครื่องใหม่
+                        </button>
+                        <button 
+                          type="button" 
+                          className="line-button" 
+                          style={{ backgroundColor: '#6c757d', padding: '8px 15px', fontSize: '0.9em' }}
+                          onClick={handleCancelNewMachine}
+                        >
+                          ยกเลิก
+                        </button>
+                      </div>
+                  </form>
+              ) : (
+                  <button 
+                    className="line-button" 
+                    style={{ backgroundColor: 'var(--primary-pink)', padding: '10px 20px', fontSize: '1em', marginTop: '20px' }}
+                    onClick={handleAddMachineClick}
+                  >
+                    เพิ่มเครื่องใหม่
+                  </button>
+              )}
+
+              {/* Active Timers Section */}
+              <h2 style={{ color: 'var(--dark-pink)', marginTop: '30px', marginBottom: '15px', fontSize: '1.4em' }}>
+                <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>⏱️</span>
+                รายการเครื่องที่กำลังทำงาน
+              </h2>
+              {loadingTimers ? (
+                <p style={{ fontSize: '0.9em' }}>กำลังโหลดรายการที่กำลังทำงาน...</p>
+              ) : (
+                <div className="active-timers-list" style={{ textAlign: 'left', overflowX: 'auto' }}> {/* Added overflowX for tables on mobile */}
+                  {activeTimers.length === 0 ? (
+                    <p style={{ textAlign: 'center', color: '#777', fontSize: '0.9em' }}>ไม่มีเครื่องใดกำลังทำงานอยู่</p>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}> {/* Reduced font size */}
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
+                          <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
+                          <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เริ่มโดย</th>
+                          <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เสร็จใน</th>
+                          <th style={{ padding: '8px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activeTimers.map(timer => (
+                          <tr key={timer.id} style={{ borderBottom: '1px dashed #eee' }}>
+                            <td style={{ padding: '8px', fontWeight: 'bold' }}>{timer.display_name} ({timer.duration_minutes} นาที)</td>
+                            <td style={{ padding: '8px', fontSize: '0.9em' }}>{timer.user_id.substring(0, 8)}...</td>
+                            <td style={{ padding: '8px' }}>{new Date(timer.end_time.seconds * 1000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
+                            <td style={{ padding: '8px', textAlign: 'right' }}>
+                              <button 
+                                className="line-button" 
+                                style={{ backgroundColor: '#dc3545', padding: '6px 10px', fontSize: '0.8em' }}
+                                onClick={() => handleCancelTimer(timer.id, timer.display_name)}
+                              >
+                                ยกเลิกการจับเวลา
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+
+              {/* Message Templates Section */}
+              <h2 style={{ color: 'var(--dark-pink)', marginTop: '30px', marginBottom: '15px', fontSize: '1.4em' }}>
+                <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>💬</span>
+                ข้อความแจ้งเตือนและตอบกลับ
+              </h2>
+              {loadingMessages ? (
+                <p style={{ fontSize: '0.9em' }}>กำลังโหลดข้อความ...</p>
+              ) : (
+                <div className="message-templates-list" style={{ textAlign: 'left', overflowX: 'auto' }}> {/* Added overflowX for tables on mobile */}
+                  {messageTemplates.length === 0 ? (
+                    <p style={{ textAlign: 'center', color: '#777', fontSize: '0.9em' }}>ไม่พบข้อมูลข้อความ กรุณาเพิ่มใน Firebase Console</p>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}> {/* Reduced font size */}
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
+                          <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>ประเภทข้อความ (ID)</th>
+                          <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เนื้อหาข้อความ</th>
+                          <th style={{ padding: '8px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {messageTemplates.map(template => (
+                          <tr key={template.docId} style={{ borderBottom: '1px dashed #eee' }}>
+                            <td style={{ padding: '8px', fontWeight: 'bold', fontSize: '0.8em' }}>{template.id}</td>
+                            <td style={{ padding: '8px', fontSize: '0.8em' }}>
+                              {editingMessageId === template.docId ? (
+                                <textarea
+                                  value={editMessageFormData}
+                                  onChange={(e) => setEditMessageFormData(e.target.value)}
+                                  rows={3}
+                                  style={{ width: '100%', padding: '4px', borderRadius: '4px', border: '1px solid #ccc', resize: 'vertical', fontSize: '0.8em' }}
+                                />
+                              ) : (
+                                template.text
+                              )}
+                            </td>
+                            <td style={{ padding: '8px', textAlign: 'right' }}>
+                              {editingMessageId === template.docId ? (
+                                <>
+                                  <button 
+                                    className="line-button" 
+                                    style={{ backgroundColor: 'var(--line-green)', padding: '5px 8px', fontSize: '0.7em', marginRight: '5px' }}
+                                    onClick={() => handleSaveMessageClick(template.docId)}
+                                  >
+                                    บันทึก
+                                  </button>
+                                  <button 
+                                    className="line-button" 
+                                    style={{ backgroundColor: '#6c757d', padding: '5px 8px', fontSize: '0.7em' }}
+                                    onClick={handleCancelMessageEdit}
+                                  >
+                                    ยกเลิก
+                                  </button>
+                                </>
+                              ) : (
+                                <button 
+                                  className="line-button" 
+                                  style={{ backgroundColor: 'var(--primary-pink)', padding: '5px 8px', fontSize: '0.7em' }}
+                                  onClick={() => handleEditMessageClick(template)}
+                                >
+                                  แก้ไข
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+            </div> {/* This closes the 'card' div */}
+          </div> // This closes the 'container' div
+        );
+      }
+
+      // --- Admin Login Page Content ---
+      return (
+        <div className="container" style={{ maxWidth: '100%', padding: '10px', margin: '10px auto' }}>
+          <div className="card">
+            <h1 style={{ fontSize: '1.8em' }}>เข้าสู่ระบบผู้ดูแล</h1> {/* Adjusted font size */}
+            <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <input
+                type="password"
+                placeholder="กรุณาใส่รหัสผ่าน"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{
+                  padding: '10px', // Adjusted padding
+                  margin: '10px 0', // Adjusted margin
+                  borderRadius: '6px', // Adjusted border-radius
+                  border: '1px solid #ddd',
+                  width: '90%', // Adjusted width
+                  maxWidth: '250px', // Adjusted max-width
+                  fontSize: '0.9em' // Adjusted font size
+                }}
+              />
+              {error && <p style={{ color: '#dc3545', fontSize: '0.8em', marginBottom: '10px' }}>{error}</p>} {/* Adjusted font size */}
+              <button 
+                type="submit" 
+                className="line-button"
+                style={{ backgroundColor: 'var(--primary-pink)', padding: '10px 20px', fontSize: '1em' }} {/* Adjusted padding/font size */}
+              >
+                เข้าสู่ระบบ
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
