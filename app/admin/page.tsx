@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, collection, getDocs, doc, updateDoc, query, where, addDoc } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, updateDoc, query, where } from 'firebase/firestore';
 
 // === กำหนดค่า Firebase (ใช้ของโปรเจกต์คุณ) ===
 const firebaseConfig = {
@@ -54,15 +54,6 @@ interface MessageTemplate {
   text: string;
 }
 
-// === NEW: Interface for the new machine form ===
-interface NewMachineForm {
-  machine_id: string | number;
-  machine_type: 'washer' | 'dryer';
-  duration_minutes: string | number;
-  is_active: boolean;
-  display_name: string;
-}
-
 export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [loggedIn, setLoggedIn] = useState(false);
@@ -77,17 +68,6 @@ export default function AdminPage() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null); // New editing state for messages
   const [editMachineFormData, setEditMachineFormData] = useState({ duration_minutes: 0, is_active: false }); // Renamed for clarity
   const [editMessageFormData, setEditMessageFormData] = useState(''); // New editing state for messages
-
-  // NEW: State for adding new machine
-  const [addingNewMachine, setAddingNewMachine] = useState(false);
-  const [newMachineFormData, setNewMachineFormData] = useState<NewMachineForm>({
-    machine_id: '',
-    machine_type: 'washer', // Default to washer
-    duration_minutes: '',
-    is_active: true,
-    display_name: ''
-  });
-
 
   const STORE_ID = 'laundry_1'; // <--- กำหนด ID ร้านค้าของคุณที่นี่ (ใช้สำหรับร้านแรก)
 
@@ -223,6 +203,32 @@ export default function AdminPage() {
   // Function to handle cancelling machine edit
   const handleCancelMachineEdit = () => {
     setEditingMachineId(null);
+  };
+
+  // Function to handle cancelling an active timer
+  const handleCancelTimer = async (timerId: string, machineDisplayName: string) => {
+    if (window.confirm(`คุณแน่ใจหรือไม่ที่จะยกเลิกการจับเวลาของ ${machineDisplayName} (ID: ${timerId})?`)) {
+      try {
+        const response = await fetch('/api/admin/timers/cancel', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ timerId, storeId: STORE_ID }),
+        });
+
+        if (response.ok) {
+            alert(`ยกเลิกการจับเวลาของ ${machineDisplayName} เรียบร้อยแล้ว`);
+            await fetchActiveTimers(); // Refresh active timers
+        } else {
+            const errorData = await response.json();
+            alert(`ไม่สามารถยกเลิกได้: ${errorData.message || 'เกิดข้อผิดพลาด'}`);
+        }
+      } catch (err) {
+        console.error("Error cancelling timer:", err);
+        alert("เกิดข้อผิดพลาดในการยกเลิกการจับเวลา");
+      }
+    }
   };
 
   // === NEW: Function to add new machine ===
@@ -376,7 +382,7 @@ export default function AdminPage() {
                       <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
                       <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>ประเภท</th>
                       <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เวลา (นาที)</th>
-                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--text-dark)' }}>ใช้งาน</th>
+                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--text-dark)' }}>ใช้งานอยู่</th>
                       <th style={{ padding: '8px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
                     </tr>
                   </thead>
@@ -391,7 +397,7 @@ export default function AdminPage() {
                               type="number"
                               value={editMachineFormData.duration_minutes}
                               onChange={(e) => setEditMachineFormData({ ...editMachineFormData, duration_minutes: parseInt(e.target.value) || 0 })}
-                              style={{ width: '60px', padding: '4px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.9em' }}
+                              style={{ width: '50px', padding: '4px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.9em' }}
                             />
                           ) : (
                                 machine.duration_minutes
@@ -402,7 +408,6 @@ export default function AdminPage() {
                                 <input
                                   type="checkbox"
                                   checked={editMachineFormData.is_active}
-                                  // === FIXED: Changed setNewMachineFormData to setEditMachineFormData ===
                                   onChange={(e) => setEditMachineFormData({ ...editMachineFormData, is_active: e.target.checked })}
                                   style={{ transform: 'scale(1.2)' }}
                                 />
@@ -424,7 +429,7 @@ export default function AdminPage() {
                                   </button>
                                   <button 
                                     className="line-button" 
-                                    style={{ backgroundColor: '#6c757d', padding: '6px 10px', fontSize: '0.8em' }}
+                                    style={{ backgroundColor: '#6c757d', padding: '5px 8px', fontSize: '0.8em' }}
                                     onClick={handleCancelMachineEdit}
                                   >
                                     ยกเลิก
@@ -454,13 +459,13 @@ export default function AdminPage() {
                 เพิ่มเครื่องใหม่
               </h2>
               {addingNewMachine ? (
-                  <form onSubmit={handleSaveNewMachine} style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '350px', margin: '0 auto', fontSize: '0.9em', padding: '15px', border: '1px solid #eee', borderRadius: '8px' }}>
+                  <form onSubmit={handleSaveNewMachine} style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '300px', margin: '0 auto', fontSize: '0.9em' }}>
                       <label style={{ textAlign: 'left', fontWeight: 'bold' }}>หมายเลขเครื่อง (ID):</label>
                       <input
                           type="number"
                           placeholder="เช่น 1, 5, 10"
                           value={newMachineFormData.machine_id}
-                          onChange={(e) => setNewMachineFormData({ ...newMachineFormData, machine_id: parseInt(e.target.value) || '' })}
+                          onChange={(e) => setNewMachineFormData({ ...newMachineFormData, machine_id: e.target.value })}
                           style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
                       />
                       <label style={{ textAlign: 'left', fontWeight: 'bold' }}>ประเภท:</label>
@@ -477,8 +482,7 @@ export default function AdminPage() {
                           type="number"
                           placeholder="เช่น 25, 40"
                           value={newMachineFormData.duration_minutes}
-                          // === FIXED: Corrected the state update logic ===
-                          onChange={(e) => setNewMachineFormData({ ...newMachineFormData, duration_minutes: parseInt(e.target.value) || '' })}
+                          onChange={(e) => setNewMachineFormData({ ...newMachineFormData.duration_minutes, duration_minutes: e.target.value })}
                           style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
                       />
                       <label style={{ textAlign: 'left', fontWeight: 'bold' }}>ชื่อแสดงผล (หน้า Bot):</label>
@@ -489,15 +493,13 @@ export default function AdminPage() {
                           onChange={(e) => setNewMachineFormData({ ...newMachineFormData, display_name: e.target.value })}
                           style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
                       />
-                      <label style={{ textAlign: 'left', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
-                        <input
+                      <label style={{ textAlign: 'left', fontWeight: 'bold' }}>สถานะ:</label>
+                      <input
                           type="checkbox"
                           checked={newMachineFormData.is_active}
                           onChange={(e) => setNewMachineFormData({ ...newMachineFormData, is_active: e.target.checked })}
-                          style={{ transform: 'scale(1.2)', marginRight: '8px' }}
-                        />
-                        เปิดใช้งาน
-                      </label>
+                          style={{ transform: 'scale(1.2)', marginRight: '5px' }}
+                      /> เปิดใช้งาน
                       
                       <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
                         <button 
@@ -673,7 +675,7 @@ export default function AdminPage() {
               <button 
                 type="submit" 
                 className="line-button"
-                style={{ backgroundColor: 'var(--primary-pink)', padding: '10px 20px', fontSize: '1em' }} {/* Adjusted padding/font size */}
+                style={{ backgroundColor: '#007bff', padding: '10px 20px', fontSize: '1em' }} {/* Adjusted padding/font size */}
               >
                 เข้าสู่ระบบ
               </button>
