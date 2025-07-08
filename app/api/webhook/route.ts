@@ -105,12 +105,12 @@ async function fetchMessagesFromFirestore(storeId: string): Promise<void> {
             messagesMap.set('landing_page_footer_note', '(ระบบจะส่งข้อความแจ้งเตือนผ่าน LINE Official Account ของเรา)');
         }
     }
-} // Moved this closing brace to encapsulate the function correctly
+} 
 
 // ฟังก์ชันสำหรับส่งข้อความตอบกลับพร้อมปุ่ม Quick Reply
-async function replyMessage(replyToken: string, text: string, currentStoreLineToken: string, quickReplyItems?: QuickReplyItem[]) { // Added currentStoreLineToken
+async function replyMessage(replyToken: string, text: string, currentStoreLineToken: string, quickReplyItems?: QuickReplyItem[]) { 
   const replyUrl = 'https://api.line.me/v2/bot/message/reply';
-  const accessToken = currentStoreLineToken; // Use currentStoreLineToken here
+  const accessToken = currentStoreLineToken; 
   
   const messagePayload: {
     replyToken: string;
@@ -141,7 +141,7 @@ async function replyMessage(replyToken: string, text: string, currentStoreLineTo
 }
 
 // ฟังก์ชันสำหรับเริ่มจับเวลาและบันทึกลง DB
-async function startTimer(userId: string, storeId: string, machineType: 'washer' | 'dryer', machineId: number, duration: number, displayName: string, replyToken: string, currentStoreLineToken: string) { // Added currentStoreLineToken
+async function startTimer(userId: string, storeId: string, machineType: 'washer' | 'dryer', machineId: number, duration: number, displayName: string, replyToken: string, currentStoreLineToken: string) { 
     const endTime = new Date(Date.now() + duration * 60 * 1000);
     
     // === ตรวจสอบสถานะเครื่องว่าง/ไม่ว่าง ก่อนบันทึก ===
@@ -152,7 +152,7 @@ async function startTimer(userId: string, storeId: string, machineType: 'washer'
         .get(); 
 
     if (!existingTimersQuery.empty) {
-        await replyMessage(replyToken, messagesMap.get('machine_busy')?.replace('{display_name}', displayName) || 'เครื่องกำลังใช้งานอยู่', currentStoreLineToken); // Pass currentStoreLineToken
+        await replyMessage(replyToken, messagesMap.get('machine_busy')?.replace('{display_name}', displayName) || 'เครื่องกำลังใช้งานอยู่', currentStoreLineToken); 
         return; // ไม่ต้องทำต่อ ถ้าเครื่องไม่ว่าง
     }
 
@@ -171,21 +171,18 @@ async function startTimer(userId: string, storeId: string, machineType: 'washer'
     await replyMessage(replyToken, 
         messagesMap.get('start_timer_confirmation')
         ?.replace('{duration}', String(duration))
-        .replace('{display_name}', displayName) || 'รับทราบค่ะ! เริ่มจับเวลาแล้ว', currentStoreLineToken); // Pass currentStoreLineToken
+        .replace('{display_name}', displayName) || 'รับทราบค่ะ! เริ่มจับเวลาแล้ว', currentStoreLineToken); 
 }
 
-// Moved POST function outside of other functions
+// ฟังก์ชัน POST หลักสำหรับ Webhook ของ LINE
 export async function POST(request: NextRequest) {
-  let storeId: string | null = null; // Declare storeId here
-  let channelIdFromLine: string | null = null; // Channel ID from LINE event
+  let storeId: string | null = null; 
+  let channelIdFromLine: string | null = null; 
 
   try {
-    // === ดึงข้อความจาก Firestore ในทุกการเรียกใช้ ===
-    // This will be dynamic based on the LINE channel ID
-    
     const body = await request.text();
     const signature = request.headers.get('x-line-signature') || '';
-    const channelSecretEnv = process.env.LINE_MESSAGING_CHANNEL_SECRET!; // Renamed to avoid conflict
+    const channelSecretEnv = process.env.LINE_MESSAGING_CHANNEL_SECRET!; 
 
     if (!channelSecretEnv) {
       console.error("LINE_MESSAGING_CHANNEL_SECRET is not set.");
@@ -201,17 +198,17 @@ export async function POST(request: NextRequest) {
     for (const event of events) {
         if (event.source && (event.source.type === 'group' || event.source.type === 'room')) {
             console.warn("Messages from group/room chat are not supported by this bot.");
-            continue; // Skip group/room messages
+            continue; 
         }
-        if (!event.source || !event.source.userId || !event.destination) { // FIX: Changed event.source.channelId to event.destination
+        if (!event.source || !event.source.userId || !event.destination) { 
             console.error("Invalid LINE event source or missing user ID/destination channel ID.");
-            continue; // Skip events without essential source info
+            continue; 
         }
 
         // === NEW: Identify store based on LINE's Channel ID ===
-        channelIdFromLine = event.destination; // FIX: Changed event.source.channelId to event.destination
+        channelIdFromLine = event.destination; 
         const storesQuery = await db.collection('stores')
-            .where('line_bot_user_id', '==', channelIdFromLine) // FIX: Changed to line_bot_user_id
+            .where('line_bot_user_id', '==', channelIdFromLine) 
             .limit(1)
             .get();
 
@@ -220,8 +217,8 @@ export async function POST(request: NextRequest) {
             return new NextResponse("Store not configured for this LINE channel.", { status: 404 });
         }
         const storeData = storesQuery.docs[0].data();
-        storeId = storesQuery.docs[0].id; // Get the Firestore Document ID as STORE_ID
-        const currentStoreLineToken = storeData.line_access_token; // Get Access Token for this store
+        storeId = storesQuery.docs[0].id; 
+        const currentStoreLineToken = storeData.line_access_token; 
 
         if (!currentStoreLineToken) {
             console.error(`LINE Access Token missing for store: ${storeId}`);
@@ -229,7 +226,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Fetch messages for this specific store (or use fallbacks)
-        await fetchMessagesFromFirestore(storeId); // Call fetchMessagesFromFirestore here
+        await fetchMessagesFromFirestore(storeId); 
 
         if (event.type === 'message' && event.message.type === 'text') {
             const userId = event.source.userId; 
