@@ -250,7 +250,7 @@ export default function AdminPage() {
           
           <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🔧</span>
-            การตั้งค่าเครื่องจักร
+            การตั้งค่าเครื่องซักผ้า/อบผ้า 
           </h2>
           {loadingMachines ? (
             <p>กำลังโหลดข้อมูลเครื่องจักร...</p>
