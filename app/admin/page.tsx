@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, collection, getDocs, doc, updateDoc } from 'firebase/firestore';
+// Import Timestamp for correct typing
+import { getFirestore, collection, getDocs, doc, updateDoc, Timestamp, where, query } from 'firebase/firestore';
 
 // === กำหนดค่า Firebase (ใช้ของโปรเจกต์คุณ) ===
 const firebaseConfig = {
@@ -44,7 +45,7 @@ interface ActiveTimer {
   machine_type: 'washer' | 'dryer';
   display_name: string;
   duration_minutes: number;
-  end_time: any; // Firestore Timestamp
+  end_time: Timestamp; // FIXED: Changed 'any' to 'Timestamp' for proper type safety
   status: string;
 }
 
@@ -66,7 +67,7 @@ export default function AdminPage() {
       fetchMachineConfigs();
       fetchActiveTimers(); // Fetch active timers when logged in
     }
-  }, [loggedIn]); 
+  }, [loggedIn]);
 
   // Function to fetch machine configurations
   const fetchMachineConfigs = async () => {
@@ -98,7 +99,9 @@ export default function AdminPage() {
     setLoadingTimers(true);
     try {
       const timersCol = collection(db, 'stores', STORE_ID, 'timers');
-      const activeTimersSnapshot = await getDocs(timersCol.where('status', '==', 'pending'));
+      // FIXED: Use query and where for type-safe querying
+      const q = query(timersCol, where('status', '==', 'pending'));
+      const activeTimersSnapshot = await getDocs(q);
       const timerList = activeTimersSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -194,8 +197,8 @@ export default function AdminPage() {
           </h1>
           <p style={{ color: 'var(--text-dark)', marginBottom: '20px' }}>จัดการการตั้งค่าเครื่องซักผ้าและอบผ้าของร้าน</p>
 
-          <button 
-            className="line-button" 
+          <button
+            className="line-button"
             style={{ backgroundColor: 'var(--dark-pink)', marginBottom: '30px' }}
             onClick={() => setLoggedIn(false)} // Logout button
           >
@@ -237,7 +240,8 @@ export default function AdminPage() {
                             <input
                               type="number"
                               value={editFormData.duration_minutes}
-                              onChange={(e) => setEditFormData({ ...editFormData, duration_minutes: parseInt(e.target.value) || 0 })}
+                              // FIXED: Added type for event object 'e'
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditFormData({ ...editFormData, duration_minutes: parseInt(e.target.value) || 0 })}
                               style={{ width: '60px', padding: '5px', borderRadius: '5px', border: '1px solid #ccc' }}
                             />
                           ) : (
@@ -249,26 +253,27 @@ export default function AdminPage() {
                             <input
                               type="checkbox"
                               checked={editFormData.is_active}
-                              onChange={(e) => setEditFormData({ ...editFormData, is_active: e.target.checked })}
+                              // FIXED: Added type for event object 'e'
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditFormData({ ...editFormData, is_active: e.target.checked })}
                             />
                           ) : (
-                            machine.is_active ? 
-                              <span style={{ color: 'var(--line-green)', fontWeight: 'bold' }}>ใช้งานอยู่</span> : 
+                            machine.is_active ?
+                              <span style={{ color: 'var(--line-green)', fontWeight: 'bold' }}>ใช้งานอยู่</span> :
                               <span style={{ color: '#dc3545', fontWeight: 'bold' }}>ปิดใช้งาน</span>
                           )}
                         </td>
                         <td style={{ padding: '10px', textAlign: 'right' }}>
                           {editingId === machine.id ? (
                             <>
-                              <button 
-                                className="line-button" 
+                              <button
+                                className="line-button"
                                 style={{ backgroundColor: 'var(--line-green)', padding: '8px 12px', fontSize: '0.9em', marginRight: '5px' }}
                                 onClick={() => handleSaveClick(machine.id)}
                               >
                                 บันทึก
                               </button>
-                              <button 
-                                className="line-button" 
+                              <button
+                                className="line-button"
                                 style={{ backgroundColor: '#6c757d', padding: '8px 12px', fontSize: '0.9em' }}
                                 onClick={handleCancelClick}
                               >
@@ -276,8 +281,8 @@ export default function AdminPage() {
                               </button>
                             </>
                           ) : (
-                            <button 
-                              className="line-button" 
+                            <button
+                              className="line-button"
                               style={{ backgroundColor: 'var(--primary-pink)', padding: '8px 12px', fontSize: '0.9em' }}
                               onClick={() => handleEditClick(machine)}
                             >
@@ -321,8 +326,8 @@ export default function AdminPage() {
                         <td style={{ padding: '10px', fontSize: '0.9em' }}>{timer.user_id.substring(0, 8)}...</td> {/* Show truncated User ID */}
                         <td style={{ padding: '10px' }}>{new Date(timer.end_time.seconds * 1000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
                         <td style={{ padding: '10px', textAlign: 'right' }}>
-                          <button 
-                            className="line-button" 
+                          <button
+                            className="line-button"
                             style={{ backgroundColor: '#dc3545', padding: '8px 12px', fontSize: '0.9em' }}
                             onClick={() => handleCancelTimer(timer.id, timer.display_name)}
                           >
@@ -351,7 +356,8 @@ export default function AdminPage() {
             type="password"
             placeholder="กรุณาใส่รหัสผ่าน"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            // FIXED: Added type for event object 'e'
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
             style={{
               padding: '12px',
               margin: '15px 0',
@@ -363,8 +369,8 @@ export default function AdminPage() {
             }}
           />
           {error && <p style={{ color: '#dc3545', fontSize: '0.9em', marginBottom: '10px' }}>{error}</p>}
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             className="line-button"
             style={{ backgroundColor: '#007bff' }}
           >
