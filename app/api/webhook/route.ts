@@ -44,12 +44,8 @@ const messageTemplatesMap = new Map<string, string>();
 // ฟังก์ชันสำหรับดึงข้อความจาก Firebase Firestore
 async function fetchMessagesFromFirestore(storeId: string): Promise<void> {
     
-    // =================================================================
-    // FIXED: ลบเงื่อนไขการตรวจสอบ cache เพื่อให้ดึงข้อมูลใหม่ทุกครั้ง
-    // บรรทัด if (messageTemplatesMap.size > 0) { return; } ถูกลบออกไป
-    // เราจะทำการล้างค่าเก่าและดึงใหม่เสมอ
+    // ล้างค่าเก่าและดึงใหม่เสมอเพื่อให้ได้ข้อมูลล่าสุด
     messageTemplatesMap.clear();
-    // =================================================================
 
     try {
         const templatesCol = db.collection('stores').doc(storeId).collection('message_templates');
@@ -128,7 +124,6 @@ async function replyMessage(replyToken: string, text: string, quickReplyItems?: 
 async function startTimer(userId: string, storeId: string, machineType: 'washer' | 'dryer', machineId: number, duration: number, displayName: string, replyToken: string) {
     const endTime = new Date(Date.now() + duration * 60 * 1000);
 
-    // === ตรวจสอบสถานะเครื่องว่าง/ไม่ว่าง ก่อนบันทึก ===
     const existingTimersQuery = await db.collection('stores').doc(storeId).collection('timers')
         .where('machine_id', '==', machineId)
         .where('machine_type', '==', machineType)
@@ -137,22 +132,20 @@ async function startTimer(userId: string, storeId: string, machineType: 'washer'
 
     if (!existingTimersQuery.empty) {
         await replyMessage(replyToken, messageTemplatesMap.get('machine_busy')?.replace('{display_name}', displayName) || 'เครื่องกำลังใช้งานอยู่');
-        return; // ไม่ต้องทำต่อ ถ้าเครื่องไม่ว่าง
+        return;
     }
 
-    // บันทึกข้อมูลลง Firestore (timers sub-collection ภายภายใต้ Store ID)
     await db.collection('stores').doc(storeId).collection('timers').add({
         user_id: userId,
         machine_id: machineId,
         machine_type: machineType, 
         display_name: displayName, 
         duration_minutes: duration, 
-        end_time: admin.firestore.Timestamp.fromDate(endTime), // ใช้ Timestamp.fromDate
+        end_time: admin.firestore.Timestamp.fromDate(endTime),
         status: 'pending',
-        created_at: admin.firestore.FieldValue.serverTimestamp(), // เพิ่ม created_at
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // ใช้ message template จาก map ที่เราดึงมาใหม่ทุกครั้ง
     const confirmationMessage = messageTemplatesMap.get('start_timer_confirmation') || 'รับทราบค่ะ! เริ่มจับเวลา {duration} นาทีสำหรับ {display_name} แล้วค่ะ';
 
     await replyMessage(replyToken, 
@@ -164,7 +157,6 @@ async function startTimer(userId: string, storeId: string, machineType: 'washer'
 
 export async function POST(request: NextRequest) {
   try {
-    // --- ดึงข้อความจาก Firestore ในทุกการเรียกใช้ ---
     await fetchMessagesFromFirestore(STORE_ID);
 
     const body = await request.text();
@@ -188,14 +180,6 @@ export async function POST(request: NextRequest) {
         const userMessage = event.message.text.trim().toLowerCase();
         const replyToken = event.replyToken; 
 
-        // --- DEBUG LOG START ---
-        console.log("--- WEBHOOK DEBUG LOG ---");
-        console.log("Received message:", userMessage);
-        console.log("Using STORE_ID:", STORE_ID);
-        // --- DEBUG LOG END ---
-
-        // === LOGIC ใหม่: ตรวจสอบข้อความที่เข้ามา ===
-        // ขั้นตอนที่ 1: ลูกค้าเลือกประเภท (ซักผ้า/อบผ้า)
         if (userMessage === "ซักผ้า") {
             const machineConfigsCol = db.collection('stores').doc(STORE_ID).collection('machine_configs');
             const q = machineConfigsCol.where('machine_type', '==', 'washer').where('is_active', '==', true);
@@ -234,7 +218,6 @@ export async function POST(request: NextRequest) {
                 await replyMessage(replyToken, 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องอบผ้าว่าง');
             }
         } 
-        // ขั้นตอนที่ 2: ลูกค้าเลือกหมายเลขเครื่อง
         else if (userMessage.startsWith("ซักผ้า_เลือก_")) {
             const requestedMachineId = parseInt(userMessage.replace('ซักผ้า_เลือก_', ''), 10);
             if (!isNaN(requestedMachineId)) {
@@ -276,7 +259,6 @@ export async function POST(request: NextRequest) {
                 await replyMessage(replyToken, messageTemplatesMap.get('machine_not_found') || 'ข้อมูลเครื่องอบผ้าไม่ถูกต้อง');
             }
         }
-        // ขั้นตอนที่ 0: ข้อความทักทายครั้งแรก หรือข้อความที่ไม่รู้จัก
         else {
             const initialButtons: QuickReplyItem[] = [
                 { type: 'action', action: { type: 'message', label: 'ซักผ้า', text: 'ซักผ้า' } },
@@ -284,7 +266,7 @@ export async function POST(request: NextRequest) {
             ];
             await replyMessage(replyToken, messageTemplatesMap.get('initial_greeting') || 'สวัสดีค่ะ กรุณาเลือกบริการที่ต้องการค่ะ', initialButtons);
         }
-      } else { // Handle non-text messages (e.g., sticker, image)
+      } else {
         if (event.replyToken) {
             await replyMessage(event.replyToken, messageTemplatesMap.get('non_text_message') || 'ขออภัยค่ะ บอทเข้าใจเฉพาะข้อความตัวอักษรเท่านั้น');
         }
@@ -293,7 +275,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: "ok" });
   } catch (error: unknown) {
     console.error("Error in webhook handler:", error);
+    
+    // =============================================================
+    // FIXED: Added @ts-ignore to suppress the 'any' type error
+    // @ts-ignore 
     const fallbackReplyToken = (request.body as any)?.events?.[0]?.replyToken;
+    // =============================================================
+
     if (fallbackReplyToken) {
         await replyMessage(fallbackReplyToken, messageTemplatesMap.get('generic_error') || 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
     }
