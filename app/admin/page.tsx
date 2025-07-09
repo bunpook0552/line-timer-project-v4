@@ -45,8 +45,14 @@ interface ActiveTimer {
   machine_type: 'washer' | 'dryer';
   display_name: string;
   duration_minutes: number;
-  end_time: Timestamp; // FIXED: Changed 'any' to 'Timestamp' for proper type safety
+  end_time: Timestamp;
   status: string;
+}
+
+interface MessageTemplate {
+  docId: string;  // Firestore document ID
+  id: string;     // Custom ID like 'initial_greeting'
+  text: string;
 }
 
 export default function AdminPage() {
@@ -54,22 +60,28 @@ export default function AdminPage() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [error, setError] = useState('');
   const [machines, setMachines] = useState<MachineConfig[]>([]);
-  const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]); // New state for active timers
-  const [loadingMachines, setLoadingMachines] = useState(true); // Changed name
-  const [loadingTimers, setLoadingTimers] = useState(true); // New loading state for timers
+  const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
+  const [loadingMachines, setLoadingMachines] = useState(true);
+  const [loadingTimers, setLoadingTimers] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState({ duration_minutes: 0, is_active: false });
 
-  const STORE_ID = 'laundry_1'; // <--- กำหนด ID ร้านค้าของคุณที่นี่ (ใช้สำหรับร้านแรก)
+  const [messages, setMessages] = useState<MessageTemplate[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(true);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editMessageText, setEditMessageText] = useState('');
+
+
+  const STORE_ID = 'laundry_1';
 
   useEffect(() => {
     if (loggedIn) {
       fetchMachineConfigs();
-      fetchActiveTimers(); // Fetch active timers when logged in
+      fetchActiveTimers();
+      fetchMessages();
     }
   }, [loggedIn]);
 
-  // Function to fetch machine configurations
   const fetchMachineConfigs = async () => {
     setLoadingMachines(true);
     try {
@@ -94,19 +106,16 @@ export default function AdminPage() {
     }
   };
 
-  // Function to fetch active timers
   const fetchActiveTimers = async () => {
     setLoadingTimers(true);
     try {
       const timersCol = collection(db, 'stores', STORE_ID, 'timers');
-      // FIXED: Use query and where for type-safe querying
       const q = query(timersCol, where('status', '==', 'pending'));
       const activeTimersSnapshot = await getDocs(q);
       const timerList = activeTimersSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as ActiveTimer[];
-      // Sort by end time
       timerList.sort((a, b) => a.end_time.toDate().getTime() - b.end_time.toDate().getTime());
       setActiveTimers(timerList);
     } catch (err) {
@@ -117,7 +126,26 @@ export default function AdminPage() {
     }
   };
 
-  // Function to handle login
+  const fetchMessages = async () => {
+    setLoadingMessages(true);
+    try {
+      const templatesCol = collection(db, 'stores', STORE_ID, 'message_templates');
+      const snapshot = await getDocs(templatesCol);
+      const templates = snapshot.docs.map(d => ({
+        docId: d.id,
+        id: d.data().id,
+        text: d.data().text,
+      })) as MessageTemplate[];
+      templates.sort((a, b) => a.id.localeCompare(b.id));
+      setMessages(templates);
+    } catch (err) {
+      console.error("Error fetching messages:", err);
+      setError("ไม่สามารถดึงข้อมูลข้อความตอบกลับได้");
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (password === ADMIN_PASSWORD) {
@@ -129,7 +157,6 @@ export default function AdminPage() {
     }
   };
 
-  // Function to handle edit machine config click
   const handleEditClick = (machine: MachineConfig) => {
     setEditingId(machine.id);
     setEditFormData({
@@ -138,7 +165,6 @@ export default function AdminPage() {
     });
   };
 
-  // Function to handle saving machine config
   const handleSaveClick = async (machineId: string) => {
     try {
       const machineRef = doc(db, 'stores', STORE_ID, 'machine_configs', machineId);
@@ -146,35 +172,50 @@ export default function AdminPage() {
         duration_minutes: editFormData.duration_minutes,
         is_active: editFormData.is_active,
       });
-      await fetchMachineConfigs(); // Refresh data
-      setEditingId(null); // Exit editing mode
+      await fetchMachineConfigs();
+      setEditingId(null);
     } catch (err) {
       console.error("Error updating machine config:", err);
       setError("ไม่สามารถบันทึกการเปลี่ยนแปลงได้");
     }
   };
 
-  // Function to handle cancelling edit
   const handleCancelClick = () => {
     setEditingId(null);
   };
+  
+  const handleEditMessageClick = (message: MessageTemplate) => {
+    setEditingMessageId(message.docId);
+    setEditMessageText(message.text);
+  };
 
-  // === NEW: Function to handle cancelling an active timer ===
+  const handleSaveMessageClick = async (docId: string) => {
+    try {
+      const messageRef = doc(db, 'stores', STORE_ID, 'message_templates', docId);
+      await updateDoc(messageRef, { text: editMessageText });
+      await fetchMessages();
+      setEditingMessageId(null);
+    } catch (err) {
+      console.error("Error updating message:", err);
+      setError("ไม่สามารถบันทึกข้อความได้");
+    }
+  };
+
+  const handleCancelMessageClick = () => {
+    setEditingMessageId(null);
+  };
+
   const handleCancelTimer = async (timerId: string, machineDisplayName: string) => {
     if (window.confirm(`คุณแน่ใจหรือไม่ที่จะยกเลิกการจับเวลาของ ${machineDisplayName} (ID: ${timerId})?`)) {
       try {
-        // Call a new backend API to update the timer status
         const response = await fetch('/api/admin/timers/cancel', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ timerId, storeId: STORE_ID }),
         });
-
         if (response.ok) {
             alert(`ยกเลิกการจับเวลาของ ${machineDisplayName} เรียบร้อยแล้ว`);
-            await fetchActiveTimers(); // Refresh active timers
+            await fetchActiveTimers();
         } else {
             const errorData = await response.json();
             alert(`ไม่สามารถยกเลิกได้: ${errorData.message || 'เกิดข้อผิดพลาด'}`);
@@ -186,7 +227,6 @@ export default function AdminPage() {
     }
   };
 
-  // --- Admin Page Content (after login) ---
   if (loggedIn) {
     return (
       <div className="container" style={{ maxWidth: '900px', padding: '30px', margin: '20px auto' }}>
@@ -195,20 +235,19 @@ export default function AdminPage() {
             <span style={{ fontSize: '1.5em', verticalAlign: 'middle', marginRight: '10px' }}>⚙️</span>
             แผงควบคุมผู้ดูแล
           </h1>
-          <p style={{ color: 'var(--text-dark)', marginBottom: '20px' }}>จัดการการตั้งค่าเครื่องซักผ้าและอบผ้าของร้าน</p>
+          <p style={{ color: 'var(--text-dark)', marginBottom: '20px' }}>จัดการการตั้งค่าและข้อความตอบกลับของร้าน</p>
 
           <button
             className="line-button"
             style={{ backgroundColor: 'var(--dark-pink)', marginBottom: '30px' }}
-            onClick={() => setLoggedIn(false)} // Logout button
+            onClick={() => setLoggedIn(false)}
           >
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🚪</span>
             ออกจากระบบ
           </button>
 
           {error && <p style={{ color: '#dc3545', marginBottom: '15px', fontWeight: 'bold' }}>{error}</p>}
-
-          {/* Machine Configurations Section */}
+          
           <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🔧</span>
             การตั้งค่าเครื่องจักร
@@ -240,7 +279,6 @@ export default function AdminPage() {
                             <input
                               type="number"
                               value={editFormData.duration_minutes}
-                              // FIXED: Added type for event object 'e'
                               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditFormData({ ...editFormData, duration_minutes: parseInt(e.target.value) || 0 })}
                               style={{ width: '60px', padding: '5px', borderRadius: '5px', border: '1px solid #ccc' }}
                             />
@@ -253,7 +291,6 @@ export default function AdminPage() {
                             <input
                               type="checkbox"
                               checked={editFormData.is_active}
-                              // FIXED: Added type for event object 'e'
                               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditFormData({ ...editFormData, is_active: e.target.checked })}
                             />
                           ) : (
@@ -298,7 +335,6 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* Active Timers Section */}
           <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>⏱️</span>
             รายการเครื่องที่กำลังทำงาน
@@ -323,7 +359,7 @@ export default function AdminPage() {
                     {activeTimers.map(timer => (
                       <tr key={timer.id} style={{ borderBottom: '1px dashed #eee' }}>
                         <td style={{ padding: '10px', fontWeight: 'bold' }}>{timer.display_name} ({timer.duration_minutes} นาที)</td>
-                        <td style={{ padding: '10px', fontSize: '0.9em' }}>{timer.user_id.substring(0, 8)}...</td> {/* Show truncated User ID */}
+                        <td style={{ padding: '10px', fontSize: '0.9em' }}>{timer.user_id.substring(0, 8)}...</td>
                         <td style={{ padding: '10px' }}>{new Date(timer.end_time.seconds * 1000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
                         <td style={{ padding: '10px', textAlign: 'right' }}>
                           <button
@@ -341,12 +377,82 @@ export default function AdminPage() {
               )}
             </div>
           )}
+
+          <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
+            <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>📝</span>
+            จัดการข้อความตอบกลับ
+          </h2>
+          {loadingMessages ? (
+            <p>กำลังโหลดข้อมูลข้อความ...</p>
+          ) : (
+            <div className="message-list" style={{ textAlign: 'left' }}>
+              {messages.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#777' }}>ไม่พบข้อมูลข้อความ</p>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>ID ข้อความ</th>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เนื้อหา</th>
+                      <th style={{ padding: '10px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {messages.map(msg => (
+                      <tr key={msg.docId} style={{ borderBottom: '1px dashed #eee' }}>
+                        <td style={{ padding: '10px', fontFamily: 'monospace', color: '#c7254e' }}>{msg.id}</td>
+                        <td style={{ padding: '10px', width: '60%' }}>
+                          {editingMessageId === msg.docId ? (
+                            <textarea
+                              value={editMessageText}
+                              onChange={(e) => setEditMessageText(e.target.value)}
+                              style={{ width: '100%', minHeight: '80px', padding: '8px', boxSizing: 'border-box', border: '1px solid #ddd', borderRadius: '4px' }}
+                              rows={3}
+                            />
+                          ) : (
+                            <span style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'right' }}>
+                          {editingMessageId === msg.docId ? (
+                            <>
+                              <button
+                                className="line-button"
+                                style={{ backgroundColor: 'var(--line-green)', padding: '8px 12px', fontSize: '0.9em', marginRight: '5px' }}
+                                onClick={() => handleSaveMessageClick(msg.docId)}
+                              >
+                                บันทึก
+                              </button>
+                              <button
+                                className="line-button"
+                                style={{ backgroundColor: '#6c757d', padding: '8px 12px', fontSize: '0.9em' }}
+                                onClick={handleCancelMessageClick}
+                              >
+                                ยกเลิก
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              className="line-button"
+                              style={{ backgroundColor: 'var(--primary-pink)', padding: '8px 12px', fontSize: '0.9em' }}
+                              onClick={() => handleEditMessageClick(msg)}
+                            >
+                              แก้ไข
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
-  // --- Admin Login Page Content ---
   return (
     <div className="container" style={{ textAlign: 'center', padding: '50px' }}>
       <div className="card">
@@ -356,7 +462,6 @@ export default function AdminPage() {
             type="password"
             placeholder="กรุณาใส่รหัสผ่าน"
             value={password}
-            // FIXED: Added type for event object 'e'
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
             style={{
               padding: '12px',
