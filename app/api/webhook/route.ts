@@ -276,14 +276,14 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error("Error in webhook handler:", error);
     
-    // =============================================================
-    // FIXED: Added @ts-ignore to suppress the 'any' type error
-    // @ts-ignore 
+    // ===================================================================================
+    // FINAL FIX: Changed to @ts-expect-error as requested by the Vercel build log
+    // @ts-expect-error 
     const fallbackReplyToken = (request.body as any)?.events?.[0]?.replyToken;
-    // =============================================================
+    // ===================================================================================
 
     if (fallbackReplyToken) {
-        await replyMessage(fallbackReplyToken, messageTemplatesMap.get('generic_error') || 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
+        await replyMessage(fallbackReplyToken, messageTemplatesMap.get('generic_error') || 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่ออีกครั้ง');
     }
     return new NextResponse("Internal Server Error", { status: 500 });
   }
