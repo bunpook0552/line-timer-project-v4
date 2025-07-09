@@ -37,6 +37,27 @@ interface MessageTemplate {
   text: string;
 }
 
+// ===================================================================================
+// START: CODE FIX AREA
+// ===================================================================================
+// สร้าง Interface สำหรับ LINE Event เพื่อหลีกเลี่ยงการใช้ 'any'
+// Create an interface for LINE Events to avoid using 'any'
+interface LineEvent {
+  type: string;
+  replyToken: string;
+  source: {
+    userId?: string;
+  };
+  message: {
+    type: string;
+    text: string;
+  };
+}
+// ===================================================================================
+// END: CODE FIX AREA
+// ===================================================================================
+
+
 // --- Global variable to store fetched messages ---
 const messageTemplatesMap = new Map<string, string>();
 
@@ -156,13 +177,10 @@ async function startTimer(userId: string, storeId: string, machineType: 'washer'
     );
 }
 
-// ===================================================================================
-// START: CODE FIX AREA
-// ===================================================================================
 export async function POST(request: NextRequest) {
-  // ประกาศตัวแปรนอก try block เพื่อให้ catch block สามารถเข้าถึงได้
-  // Declare variables outside the try block so the catch block can access them.
-  let events: any[] = [];
+  // ใช้ Interface 'LineEvent[]' ที่สร้างขึ้นมาแทน 'any[]'
+  // Use the created 'LineEvent[]' interface instead of 'any[]'
+  let events: LineEvent[] = [];
 
   try {
     await fetchMessagesFromFirestore(STORE_ID);
@@ -181,7 +199,7 @@ export async function POST(request: NextRequest) {
       return new NextResponse("Signature validation failed!", { status: 401 });
     }
 
-    events = JSON.parse(body).events; // กำหนดค่าให้ตัวแปรที่อยู่นอก scope
+    events = JSON.parse(body).events; 
     for (const event of events) {
       if (event.type === 'message' && event.message.type === 'text' && event.source.userId) {
         const userId = event.source.userId; 
@@ -287,7 +305,6 @@ export async function POST(request: NextRequest) {
     console.error("Error in webhook handler:", error);
     
     // ดึง replyToken จาก event แรกเป็น fallback ในกรณีที่เกิด error
-    // Safely get the fallback reply token from the first event if an error occurs.
     const fallbackReplyToken = events?.[0]?.replyToken;
     
     if (fallbackReplyToken) {
@@ -297,6 +314,3 @@ export async function POST(request: NextRequest) {
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
-// ===================================================================================
-// END: CODE FIX AREA
-// ===================================================================================
