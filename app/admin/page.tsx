@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-// === FIX #3: นำเข้า deleteDoc ===
-import { getFirestore, collection, getDocs, doc, updateDoc, query, where, addDoc, deleteDoc } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 
 // === กำหนดค่า Firebase (ใช้ของโปรเจกต์คุณ) ===
 const firebaseConfig = {
@@ -45,14 +44,8 @@ interface ActiveTimer {
   machine_type: 'washer' | 'dryer';
   display_name: string;
   duration_minutes: number;
-  end_time: { seconds: number; nanoseconds: number; }; // Firestore Timestamp
+  end_time: any; // Firestore Timestamp
   status: string;
-}
-
-interface MessageTemplate {
-  docId: string; // Document ID in Firestore
-  id: string; // Custom ID from database (e.g., 'initial_greeting')
-  text: string;
 }
 
 export default function AdminPage() {
@@ -60,34 +53,22 @@ export default function AdminPage() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [error, setError] = useState('');
   const [machines, setMachines] = useState<MachineConfig[]>([]);
-  const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]);
-  const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([]);
-  const [loadingMachines, setLoadingMachines] = useState(true);
-  const [loadingTimers, setLoadingTimers] = useState(true);
-  const [loadingMessages, setLoadingMessages] = useState(true);
-  const [editingMachineId, setEditingMachineId] = useState<string | null>(null);
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [editMachineFormData, setEditMachineFormData] = useState({ duration_minutes: 0, is_active: false });
-  const [editMessageFormData, setEditMessageFormData] = useState('');
-  const [addingNewMachine, setAddingNewMachine] = useState(false);
-  const [newMachineFormData, setNewMachineFormData] = useState({
-    machine_id: '',
-    machine_type: 'washer' as 'washer' | 'dryer',
-    duration_minutes: '',
-    is_active: true,
-    display_name: ''
-  });
+  const [activeTimers, setActiveTimers] = useState<ActiveTimer[]>([]); // New state for active timers
+  const [loadingMachines, setLoadingMachines] = useState(true); // Changed name
+  const [loadingTimers, setLoadingTimers] = useState(true); // New loading state for timers
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editFormData, setEditFormData] = useState({ duration_minutes: 0, is_active: false });
 
   const STORE_ID = 'laundry_1'; // <--- กำหนด ID ร้านค้าของคุณที่นี่ (ใช้สำหรับร้านแรก)
 
   useEffect(() => {
     if (loggedIn) {
       fetchMachineConfigs();
-      fetchActiveTimers();
-      fetchMessageTemplates();
+      fetchActiveTimers(); // Fetch active timers when logged in
     }
-  }, [loggedIn]);
+  }, [loggedIn]); 
 
+  // Function to fetch machine configurations
   const fetchMachineConfigs = async () => {
     setLoadingMachines(true);
     try {
@@ -98,10 +79,10 @@ export default function AdminPage() {
         ...doc.data()
       })) as MachineConfig[];
       machineList.sort((a, b) => {
-        if (a.machine_type === b.machine_type) {
-          return a.machine_id - b.machine_id;
-        }
-        return a.machine_type.localeCompare(b.machine_type);
+          if (a.machine_type === b.machine_type) {
+              return a.machine_id - b.machine_id;
+          }
+          return a.machine_type.localeCompare(b.machine_type);
       });
       setMachines(machineList);
     } catch (err) {
@@ -112,61 +93,28 @@ export default function AdminPage() {
     }
   };
 
+  // Function to fetch active timers
   const fetchActiveTimers = async () => {
     setLoadingTimers(true);
     try {
       const timersCol = collection(db, 'stores', STORE_ID, 'timers');
-      const q = query(timersCol, where('status', '==', 'pending'));
-      const activeTimersSnapshot = await getDocs(q);
-
+      const activeTimersSnapshot = await getDocs(timersCol.where('status', '==', 'pending'));
       const timerList = activeTimersSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as ActiveTimer[];
-
-      timerList.sort((a, b) => {
-        const dateA = new Date(a.end_time.seconds * 1000 + a.end_time.nanoseconds / 1000000);
-        const dateB = new Date(b.end_time.seconds * 1000 + b.end_time.nanoseconds / 1000000);
-        return dateA.getTime() - dateB.getTime();
-      });
-
+      // Sort by end time
+      timerList.sort((a, b) => a.end_time.toDate().getTime() - b.end_time.toDate().getTime());
       setActiveTimers(timerList);
-    } catch (err: unknown) {
+    } catch (err) {
       console.error("Error fetching active timers:", err);
-      if (typeof err === 'object' && err !== null && 'code' in err && 'details' in err) {
-        const firebaseError = err as { code: string, details: string };
-        if (firebaseError.code === 'failed-precondition' && firebaseError.details.includes('requires an index')) {
-          setError("Firebase Index สำหรับรายการที่กำลังทำงานยังไม่ถูกสร้าง กรุณาสร้างตามคำแนะนำใน Console Log");
-        } else {
-          setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
-        }
-      } else {
-        setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
-      }
+      setError("ไม่สามารถดึงข้อมูลรายการที่กำลังทำงานได้");
     } finally {
       setLoadingTimers(false);
     }
   };
 
-  const fetchMessageTemplates = async () => {
-    setLoadingMessages(true);
-    try {
-      const templatesCol = collection(db, 'stores', STORE_ID, 'message_templates');
-      const templateSnapshot = await getDocs(templatesCol);
-      const templateList = templateSnapshot.docs.map(doc => ({
-        docId: doc.id,
-        ...doc.data()
-      })) as MessageTemplate[];
-      templateList.sort((a, b) => a.id.localeCompare(b.id));
-      setMessageTemplates(templateList);
-    } catch (err) {
-      console.error("Error fetching message templates:", err);
-      setError("ไม่สามารถดึงข้อมูลข้อความแจ้งเตือนได้");
-    } finally {
-      setLoadingMessages(false);
-    }
-  };
-
+  // Function to handle login
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (password === ADMIN_PASSWORD) {
@@ -178,65 +126,55 @@ export default function AdminPage() {
     }
   };
 
-  const handleEditMachineClick = (machine: MachineConfig) => {
-    setEditingMachineId(machine.id);
-    setEditMachineFormData({
+  // Function to handle edit machine config click
+  const handleEditClick = (machine: MachineConfig) => {
+    setEditingId(machine.id);
+    setEditFormData({
       duration_minutes: machine.duration_minutes,
       is_active: machine.is_active,
     });
   };
 
-  const handleSaveMachineClick = async (machineDocId: string) => {
+  // Function to handle saving machine config
+  const handleSaveClick = async (machineId: string) => {
     try {
-      const machineRef = doc(db, 'stores', STORE_ID, 'machine_configs', machineDocId);
+      const machineRef = doc(db, 'stores', STORE_ID, 'machine_configs', machineId);
       await updateDoc(machineRef, {
-        duration_minutes: editMachineFormData.duration_minutes,
-        is_active: editMachineFormData.is_active,
+        duration_minutes: editFormData.duration_minutes,
+        is_active: editFormData.is_active,
       });
-      await fetchMachineConfigs();
-      setEditingMachineId(null);
+      await fetchMachineConfigs(); // Refresh data
+      setEditingId(null); // Exit editing mode
     } catch (err) {
       console.error("Error updating machine config:", err);
       setError("ไม่สามารถบันทึกการเปลี่ยนแปลงได้");
     }
   };
-  
-  // === FIX #1: เพิ่มฟังก์ชันสำหรับลบเครื่องจักร ===
-  const handleDeleteMachine = async (machineDocId: string, machineDisplayName: string) => {
-    if (window.confirm(`คุณแน่ใจหรือไม่ที่จะลบเครื่อง "${machineDisplayName}" ออกจากระบบ? การกระทำนี้ไม่สามารถย้อนกลับได้`)) {
-      try {
-        const machineRef = doc(db, 'stores', STORE_ID, 'machine_configs', machineDocId);
-        await deleteDoc(machineRef);
-        alert(`ลบเครื่อง ${machineDisplayName} เรียบร้อยแล้ว`);
-        await fetchMachineConfigs(); // โหลดข้อมูลใหม่
-      } catch (err) {
-        console.error("Error deleting machine:", err);
-        setError("เกิดข้อผิดพลาดในการลบเครื่องจักร");
-      }
-    }
+
+  // Function to handle cancelling edit
+  const handleCancelClick = () => {
+    setEditingId(null);
   };
 
-  const handleCancelMachineEdit = () => {
-    setEditingMachineId(null);
-  };
-
+  // === NEW: Function to handle cancelling an active timer ===
   const handleCancelTimer = async (timerId: string, machineDisplayName: string) => {
     if (window.confirm(`คุณแน่ใจหรือไม่ที่จะยกเลิกการจับเวลาของ ${machineDisplayName} (ID: ${timerId})?`)) {
       try {
+        // Call a new backend API to update the timer status
         const response = await fetch('/api/admin/timers/cancel', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ timerId, storeId: STORE_ID }),
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ timerId, storeId: STORE_ID }),
         });
 
         if (response.ok) {
-          alert(`ยกเลิกการจับเวลาของ ${machineDisplayName} เรียบร้อยแล้ว`);
-          await fetchActiveTimers();
+            alert(`ยกเลิกการจับเวลาของ ${machineDisplayName} เรียบร้อยแล้ว`);
+            await fetchActiveTimers(); // Refresh active timers
         } else {
-          const errorData = await response.json();
-          alert(`ไม่สามารถยกเลิกได้: ${errorData.message || 'เกิดข้อผิดพลาด'}`);
+            const errorData = await response.json();
+            alert(`ไม่สามารถยกเลิกได้: ${errorData.message || 'เกิดข้อผิดพลาด'}`);
         }
       } catch (err) {
         console.error("Error cancelling timer:", err);
@@ -245,384 +183,103 @@ export default function AdminPage() {
     }
   };
 
-  const handleAddMachineClick = () => {
-    setAddingNewMachine(true);
-    setNewMachineFormData({
-      machine_id: '',
-      machine_type: 'washer',
-      duration_minutes: '',
-      is_active: true,
-      display_name: ''
-    });
-  };
-
-  const handleSaveNewMachine = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMachineFormData.machine_id || !newMachineFormData.display_name || !newMachineFormData.duration_minutes) {
-      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
-      return;
-    }
-    const parsedMachineId = parseInt(String(newMachineFormData.machine_id), 10);
-    const parsedDuration = parseInt(String(newMachineFormData.duration_minutes), 10);
-    if (isNaN(parsedMachineId) || parsedMachineId <= 0 || isNaN(parsedDuration) || parsedDuration <= 0) {
-      alert('หมายเลขเครื่องและเวลาต้องเป็นตัวเลขที่ถูกต้องและมากกว่า 0');
-      return;
-    }
-
-    try {
-      const machineConfigsCol = collection(db, 'stores', STORE_ID, 'machine_configs');
-      const existingMachine = await getDocs(query(
-        machineConfigsCol,
-        where('machine_id', '==', parsedMachineId),
-        where('machine_type', '==', newMachineFormData.machine_type)
-      ));
-      if (!existingMachine.empty) {
-        alert(`เครื่องประเภท ${newMachineFormData.machine_type} หมายเลข ${parsedMachineId} มีอยู่ในระบบแล้ว`);
-        return;
-      }
-
-      await addDoc(machineConfigsCol, {
-        machine_id: parsedMachineId,
-        machine_type: newMachineFormData.machine_type,
-        duration_minutes: parsedDuration,
-        is_active: newMachineFormData.is_active,
-        display_name: newMachineFormData.display_name
-      });
-      alert('เพิ่มเครื่องใหม่เรียบร้อยแล้ว');
-      setAddingNewMachine(false);
-      await fetchMachineConfigs();
-    } catch (err) {
-      console.error("Error adding new machine:", err);
-      setError("ไม่สามารถเพิ่มเครื่องใหม่ได้");
-    }
-  };
-
-  const handleCancelNewMachine = () => {
-    setAddingNewMachine(false);
-  };
-
-  const handleEditMessageClick = (template: MessageTemplate) => {
-    setEditingMessageId(template.docId);
-    setEditMessageFormData(template.text);
-  };
-
-  const handleSaveMessageClick = async (templateDocId: string) => {
-    try {
-      const templateRef = doc(db, 'stores', STORE_ID, 'message_templates', templateDocId);
-      await updateDoc(templateRef, {
-        text: editMessageFormData,
-      });
-      await fetchMessageTemplates();
-      setEditingMessageId(null);
-    } catch (err) {
-      console.error("Error updating message template:", err);
-      setError("ไม่สามารถบันทึกข้อความได้");
-    }
-  };
-
-  const handleCancelMessageEdit = () => {
-    setEditingMessageId(null);
-  };
-
+  // --- Admin Page Content (after login) ---
   if (loggedIn) {
     return (
-      <div className="container" style={{ maxWidth: '100%', padding: '10px', margin: '10px auto' }}>
+      <div className="container" style={{ maxWidth: '900px', padding: '30px', margin: '20px auto' }}>
         <div className="card">
-          <h1 style={{ color: 'var(--primary-pink)', fontSize: '1.8em' }}>
+          <h1 style={{ color: 'var(--primary-pink)' }}>
             <span style={{ fontSize: '1.5em', verticalAlign: 'middle', marginRight: '10px' }}>⚙️</span>
             แผงควบคุมผู้ดูแล
           </h1>
-          <p style={{ color: 'var(--text-dark)', marginBottom: '15px', fontSize: '0.9em' }}>จัดการการตั้งค่าเครื่องซักผ้า-อบผ้า และข้อความแจ้งเตือนของร้าน</p>
+          <p style={{ color: 'var(--text-dark)', marginBottom: '20px' }}>จัดการการตั้งค่าเครื่องซักผ้าและอบผ้าของร้าน</p>
 
-          <button
-            className="line-button"
-            style={{ backgroundColor: 'var(--dark-pink)', marginBottom: '20px', padding: '10px 20px', fontSize: '1em' }}
-            onClick={() => setLoggedIn(false)}
+          <button 
+            className="line-button" 
+            style={{ backgroundColor: 'var(--dark-pink)', marginBottom: '30px' }}
+            onClick={() => setLoggedIn(false)} // Logout button
           >
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🚪</span>
             ออกจากระบบ
           </button>
 
-          {error && <p style={{ color: '#dc3545', marginBottom: '15px', fontWeight: 'bold', fontSize: '0.9em' }}>{error}</p>}
+          {error && <p style={{ color: '#dc3545', marginBottom: '15px', fontWeight: 'bold' }}>{error}</p>}
 
-          <h2 style={{ color: 'var(--dark-pink)', marginTop: '20px', marginBottom: '15px', fontSize: '1.4em' }}>
+          {/* Machine Configurations Section */}
+          <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
             <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>🔧</span>
             การตั้งค่าเครื่องจักร
           </h2>
           {loadingMachines ? (
-            <p style={{ fontSize: '0.9em' }}>กำลังโหลดข้อมูลเครื่องจักร...</p>
+            <p>กำลังโหลดข้อมูลเครื่องจักร...</p>
           ) : (
-            <div className="machine-list" style={{ textAlign: 'left', overflowX: 'auto' }}>
+            <div className="machine-list" style={{ textAlign: 'left' }}>
               {machines.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#777', fontSize: '0.9em' }}>ไม่พบข้อมูลเครื่องจักร</p>
+                <p style={{ textAlign: 'center', color: '#777' }}>ไม่พบข้อมูลเครื่องจักร</p>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
-                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
-                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>ประเภท</th>
-                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เวลา (นาที)</th>
-                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--text-dark)' }}>ใช้งานอยู่</th>
-                      <th style={{ padding: '8px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>ประเภท</th>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เวลา (นาที)</th>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>สถานะ</th>
+                      <th style={{ padding: '10px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
                     </tr>
                   </thead>
                   <tbody>
                     {machines.map(machine => (
                       <tr key={machine.id} style={{ borderBottom: '1px dashed #eee' }}>
-                        <td style={{ padding: '8px', fontWeight: 'bold' }}>{machine.display_name}</td>
-                        <td style={{ padding: '8px' }}>{machine.machine_type === 'washer' ? 'ซักผ้า' : 'อบผ้า'}</td>
-                        <td style={{ padding: '8px' }}>
-                          {editingMachineId === machine.id ? (
+                        <td style={{ padding: '10px', fontWeight: 'bold' }}>{machine.display_name}</td>
+                        <td style={{ padding: '10px' }}>{machine.machine_type === 'washer' ? 'ซักผ้า' : 'อบผ้า'}</td>
+                        <td style={{ padding: '10px' }}>
+                          {editingId === machine.id ? (
                             <input
                               type="number"
-                              value={editMachineFormData.duration_minutes}
-                              onChange={(e) => setEditMachineFormData({ ...editMachineFormData, duration_minutes: parseInt(e.target.value) || 0 })}
-                              style={{ width: '50px', padding: '4px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '0.9em' }}
+                              value={editFormData.duration_minutes}
+                              onChange={(e) => setEditFormData({ ...editFormData, duration_minutes: parseInt(e.target.value) || 0 })}
+                              style={{ width: '60px', padding: '5px', borderRadius: '5px', border: '1px solid #ccc' }}
                             />
                           ) : (
                             machine.duration_minutes
                           )}
                         </td>
-                        <td style={{ padding: '8px' }}>
-                          {editingMachineId === machine.id ? (
+                        <td style={{ padding: '10px' }}>
+                          {editingId === machine.id ? (
                             <input
                               type="checkbox"
-                              checked={editMachineFormData.is_active}
-                              onChange={(e) => setEditMachineFormData({ ...editMachineFormData, is_active: e.target.checked })}
-                              style={{ transform: 'scale(1.2)' }}
+                              checked={editFormData.is_active}
+                              onChange={(e) => setEditFormData({ ...editFormData, is_active: e.target.checked })}
                             />
                           ) : (
-                            machine.is_active ?
-                              <span style={{ color: 'var(--line-green)', fontWeight: 'bold' }}>✅</span> :
-                              <span style={{ color: '#dc3545', fontWeight: 'bold' }}>❌</span>
+                            machine.is_active ? 
+                              <span style={{ color: 'var(--line-green)', fontWeight: 'bold' }}>ใช้งานอยู่</span> : 
+                              <span style={{ color: '#dc3545', fontWeight: 'bold' }}>ปิดใช้งาน</span>
                           )}
                         </td>
-                        <td style={{ padding: '8px', textAlign: 'right' }}>
-                          {editingMachineId === machine.id ? (
+                        <td style={{ padding: '10px', textAlign: 'right' }}>
+                          {editingId === machine.id ? (
                             <>
-                              <button
-                                className="line-button"
-                                style={{ backgroundColor: 'var(--line-green)', padding: '6px 10px', fontSize: '0.8em', marginRight: '5px' }}
-                                onClick={() => handleSaveMachineClick(machine.id)}
+                              <button 
+                                className="line-button" 
+                                style={{ backgroundColor: 'var(--line-green)', padding: '8px 12px', fontSize: '0.9em', marginRight: '5px' }}
+                                onClick={() => handleSaveClick(machine.id)}
                               >
                                 บันทึก
                               </button>
-                              <button
-                                className="line-button"
-                                style={{ backgroundColor: '#6c757d', padding: '5px 8px', fontSize: '0.8em' }}
-                                onClick={handleCancelMachineEdit}
+                              <button 
+                                className="line-button" 
+                                style={{ backgroundColor: '#6c757d', padding: '8px 12px', fontSize: '0.9em' }}
+                                onClick={handleCancelClick}
                               >
                                 ยกเลิก
                               </button>
                             </>
                           ) : (
-                            // === FIX #2: เพิ่มปุ่ม "แก้ไข" และ "ลบ" ===
-                            <div style={{display: 'flex', gap: '5px', justifyContent: 'flex-end'}}>
-                                <button
-                                  className="line-button"
-                                  style={{ backgroundColor: 'var(--primary-pink)', padding: '5px 8px', fontSize: '0.8em' }}
-                                  onClick={() => handleEditMachineClick(machine)}
-                                >
-                                  แก้ไข
-                                </button>
-                                <button
-                                  className="line-button"
-                                  style={{ backgroundColor: '#dc3545', padding: '5px 8px', fontSize: '0.8em' }}
-                                  onClick={() => handleDeleteMachine(machine.id, machine.display_name)}
-                                >
-                                  ลบ
-                                </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {/* Add New Machine Section */}
-          <h2 style={{ color: 'var(--dark-pink)', marginTop: '30px', marginBottom: '15px', fontSize: '1.4em' }}>
-            <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>➕</span>
-            เพิ่มเครื่องใหม่
-          </h2>
-          {addingNewMachine ? (
-            <form onSubmit={handleSaveNewMachine} style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '300px', margin: '0 auto', fontSize: '0.9em' }}>
-              <label style={{ textAlign: 'left', fontWeight: 'bold' }}>หมายเลขเครื่อง (ID):</label>
-              <input
-                type="number"
-                placeholder="เช่น 1, 5, 10"
-                value={newMachineFormData.machine_id}
-                onChange={(e) => setNewMachineFormData({ ...newMachineFormData, machine_id: e.target.value })}
-                style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
-              />
-              <label style={{ textAlign: 'left', fontWeight: 'bold' }}>ประเภท:</label>
-              <select
-                value={newMachineFormData.machine_type}
-                onChange={(e) => setNewMachineFormData({ ...newMachineFormData, machine_type: e.target.value as 'washer' | 'dryer' })}
-                style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
-              >
-                <option value="washer">ซักผ้า</option>
-                <option value="dryer">อบผ้า</option>
-              </select>
-              <label style={{ textAlign: 'left', fontWeight: 'bold' }}>เวลาที่ใช้ (นาที):</label>
-              <input
-                type="number"
-                placeholder="เช่น 25, 40"
-                value={newMachineFormData.duration_minutes}
-                onChange={(e) => setNewMachineFormData({ ...newMachineFormData, duration_minutes: e.target.value })}
-                style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
-              />
-              <label style={{ textAlign: 'left', fontWeight: 'bold' }}>ชื่อแสดงผล (หน้า Bot):</label>
-              <input
-                type="text"
-                placeholder="เช่น เครื่องซักผ้า #5, เครื่องอบผ้า (40 นาที)"
-                value={newMachineFormData.display_name}
-                onChange={(e) => setNewMachineFormData({ ...newMachineFormData, display_name: e.target.value })}
-                style={{ padding: '8px', borderRadius: '5px', border: '1px solid #ccc' }}
-              />
-              <label style={{display: 'flex', alignItems: 'center', textAlign: 'left', fontWeight: 'bold'}}>
-                <input
-                  type="checkbox"
-                  checked={newMachineFormData.is_active}
-                  onChange={(e) => setNewMachineFormData({ ...newMachineFormData, is_active: e.target.checked })}
-                  style={{ transform: 'scale(1.2)', marginRight: '10px' }}
-                /> เปิดใช้งาน
-              </label>
-
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
-                <button
-                  type="submit"
-                  className="line-button"
-                  style={{ backgroundColor: 'var(--line-green)', padding: '8px 15px', fontSize: '0.9em' }}
-                >
-                  บันทึกเครื่องใหม่
-                </button>
-                <button
-                  type="button"
-                  className="line-button"
-                  style={{ backgroundColor: '#6c757d', padding: '8px 15px', fontSize: '0.9em' }}
-                  onClick={handleCancelNewMachine}
-                >
-                  ยกเลิก
-                </button>
-              </div>
-            </form>
-          ) : (
-            <button
-              className="line-button"
-              style={{ backgroundColor: 'var(--primary-pink)', padding: '10px 20px', fontSize: '1em', marginTop: '10px' }}
-              onClick={handleAddMachineClick}
-            >
-              เพิ่มเครื่องใหม่
-            </button>
-          )}
-
-          {/* Active Timers Section */}
-          <h2 style={{ color: 'var(--dark-pink)', marginTop: '30px', marginBottom: '15px', fontSize: '1.4em' }}>
-            <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>⏱️</span>
-            รายการเครื่องที่กำลังทำงาน
-          </h2>
-          {loadingTimers ? (
-            <p style={{ fontSize: '0.9em' }}>กำลังโหลดรายการที่กำลังทำงาน...</p>
-          ) : (
-            <div className="active-timers-list" style={{ textAlign: 'left', overflowX: 'auto' }}>
-              {activeTimers.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#777', fontSize: '0.9em' }}>ไม่มีเครื่องใดกำลังทำงานอยู่</p>
-              ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
-                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
-                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เริ่มโดย</th>
-                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เสร็จใน</th>
-                      <th style={{ padding: '8px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeTimers.map(timer => (
-                      <tr key={timer.id} style={{ borderBottom: '1px dashed #eee' }}>
-                        <td style={{ padding: '8px', fontWeight: 'bold' }}>{timer.display_name} ({timer.duration_minutes} นาที)</td>
-                        <td style={{ padding: '8px', fontSize: '0.9em' }}>{timer.user_id.substring(0, 8)}...</td>
-                        <td style={{ padding: '8px' }}>{new Date(timer.end_time.seconds * 1000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
-                        <td style={{ padding: '8px', textAlign: 'right' }}>
-                          <button
-                            className="line-button"
-                            style={{ backgroundColor: '#dc3545', padding: '6px 10px', fontSize: '0.8em' }}
-                            onClick={() => handleCancelTimer(timer.id, timer.display_name)}
-                          >
-                            ยกเลิกการจับเวลา
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {/* Message Templates Section */}
-          <h2 style={{ color: 'var(--dark-pink)', marginTop: '30px', marginBottom: '15px', fontSize: '1.4em' }}>
-            <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>💬</span>
-            ข้อความแจ้งเตือนและตอบกลับ
-          </h2>
-          {loadingMessages ? (
-            <p style={{ fontSize: '0.9em' }}>กำลังโหลดข้อความ...</p>
-          ) : (
-            <div className="message-templates-list" style={{ textAlign: 'left', overflowX: 'auto' }}>
-              {messageTemplates.length === 0 ? (
-                <p style={{ textAlign: 'center', color: '#777', fontSize: '0.9em' }}>ไม่พบข้อมูลข้อความ กรุณาเพิ่มใน Firebase Console</p>
-              ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '10px', fontSize: '0.9em' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
-                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>ประเภทข้อความ (ID)</th>
-                      <th style={{ padding: '8px', textAlign: 'left', color: 'var(--dark-pink)' }}>เนื้อหาข้อความ</th>
-                      <th style={{ padding: '8px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {messageTemplates.map(template => (
-                      <tr key={template.docId} style={{ borderBottom: '1px dashed #eee' }}>
-                        <td style={{ padding: '8px', fontWeight: 'bold', fontSize: '0.8em', verticalAlign: 'top' }}>{template.id}</td>
-                        <td style={{ padding: '8px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                          {editingMessageId === template.docId ? (
-                            <textarea
-                              value={editMessageFormData}
-                              onChange={(e) => setEditMessageFormData(e.target.value)}
-                              rows={4}
-                              style={{ width: '100%', padding: '4px', borderRadius: '4px', border: '1px solid #ccc', resize: 'vertical', fontSize: '1em' }}
-                            />
-                          ) : (
-                            template.text
-                          )}
-                        </td>
-                        <td style={{ padding: '8px', textAlign: 'right', verticalAlign: 'top' }}>
-                          {editingMessageId === template.docId ? (
-                            <>
-                              <button
-                                className="line-button"
-                                style={{ backgroundColor: 'var(--line-green)', padding: '6px 10px', fontSize: '0.8em', marginRight: '5px', display: 'block', width: '100%' }}
-                                onClick={() => handleSaveMessageClick(template.docId)}
-                              >
-                                บันทึก
-                              </button>
-                              <button
-                                className="line-button"
-                                style={{ backgroundColor: '#6c757d', padding: '6px 10px', fontSize: '0.8em', marginTop: '5px', display: 'block', width: '100%' }}
-                                onClick={handleCancelMessageEdit}
-                              >
-                                ยกเลิก
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              className="line-button"
-                              style={{ backgroundColor: 'var(--primary-pink)', padding: '6px 10px', fontSize: '0.8em' }}
-                              onClick={() => handleEditMessageClick(template)}
+                            <button 
+                              className="line-button" 
+                              style={{ backgroundColor: 'var(--primary-pink)', padding: '8px 12px', fontSize: '0.9em' }}
+                              onClick={() => handleEditClick(machine)}
                             >
                               แก้ไข
                             </button>
@@ -636,6 +293,49 @@ export default function AdminPage() {
             </div>
           )}
 
+          {/* Active Timers Section */}
+          <h2 style={{ color: 'var(--dark-pink)', marginTop: '40px', marginBottom: '20px' }}>
+            <span style={{ fontSize: '1.2em', verticalAlign: 'middle', marginRight: '5px' }}>⏱️</span>
+            รายการเครื่องที่กำลังทำงาน
+          </h2>
+          {loadingTimers ? (
+            <p>กำลังโหลดรายการที่กำลังทำงาน...</p>
+          ) : (
+            <div className="active-timers-list" style={{ textAlign: 'left' }}>
+              {activeTimers.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#777' }}>ไม่มีเครื่องใดกำลังทำงานอยู่</p>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--light-pink)' }}>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เครื่อง</th>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เริ่มโดย</th>
+                      <th style={{ padding: '10px', textAlign: 'left', color: 'var(--dark-pink)' }}>เสร็จใน</th>
+                      <th style={{ padding: '10px', textAlign: 'right', color: 'var(--dark-pink)' }}>จัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeTimers.map(timer => (
+                      <tr key={timer.id} style={{ borderBottom: '1px dashed #eee' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold' }}>{timer.display_name} ({timer.duration_minutes} นาที)</td>
+                        <td style={{ padding: '10px', fontSize: '0.9em' }}>{timer.user_id.substring(0, 8)}...</td> {/* Show truncated User ID */}
+                        <td style={{ padding: '10px' }}>{new Date(timer.end_time.seconds * 1000).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
+                        <td style={{ padding: '10px', textAlign: 'right' }}>
+                          <button 
+                            className="line-button" 
+                            style={{ backgroundColor: '#dc3545', padding: '8px 12px', fontSize: '0.9em' }}
+                            onClick={() => handleCancelTimer(timer.id, timer.display_name)}
+                          >
+                            ยกเลิกการจับเวลา
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -643,9 +343,9 @@ export default function AdminPage() {
 
   // --- Admin Login Page Content ---
   return (
-    <div className="container" style={{ maxWidth: '100%', padding: '10px', margin: '10px auto' }}>
+    <div className="container" style={{ textAlign: 'center', padding: '50px' }}>
       <div className="card">
-        <h1 style={{ fontSize: '1.8em' }}>เข้าสู่ระบบผู้ดูแล</h1>
+        <h1>เข้าสู่ระบบผู้ดูแล</h1>
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <input
             type="password"
@@ -653,20 +353,20 @@ export default function AdminPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             style={{
-              padding: '10px',
-              margin: '10px 0',
-              borderRadius: '6px',
+              padding: '12px',
+              margin: '15px 0',
+              borderRadius: '8px',
               border: '1px solid #ddd',
-              width: '90%',
-              maxWidth: '250px',
-              fontSize: '0.9em'
+              width: '80%',
+              maxWidth: '300px',
+              fontSize: '1em'
             }}
           />
-          {error && <p style={{ color: '#dc3545', fontSize: '0.8em', marginBottom: '10px' }}>{error}</p>}
-          <button
-            type="submit"
+          {error && <p style={{ color: '#dc3545', fontSize: '0.9em', marginBottom: '10px' }}>{error}</p>}
+          <button 
+            type="submit" 
             className="line-button"
-            style={{ backgroundColor: '#007bff', padding: '10px 20px', fontSize: '1em' }}
+            style={{ backgroundColor: '#007bff' }}
           >
             เข้าสู่ระบบ
           </button>
