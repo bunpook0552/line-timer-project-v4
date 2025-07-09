@@ -131,7 +131,8 @@ async function startTimer(userId: string, storeId: string, machineType: 'washer'
         .get(); 
 
     if (!existingTimersQuery.empty) {
-        await replyMessage(replyToken, messageTemplatesMap.get('machine_busy')?.replace('{display_name}', displayName) || 'เครื่องกำลังใช้งานอยู่');
+        const busyMessage = messageTemplatesMap.get('machine_busy') || 'เครื่อง {display_name} กำลังใช้งานอยู่ค่ะ';
+        await replyMessage(replyToken, busyMessage.replace('{display_name}', displayName));
         return;
     }
 
@@ -155,7 +156,14 @@ async function startTimer(userId: string, storeId: string, machineType: 'washer'
     );
 }
 
+// ===================================================================================
+// START: CODE FIX AREA
+// ===================================================================================
 export async function POST(request: NextRequest) {
+  // ประกาศตัวแปรนอก try block เพื่อให้ catch block สามารถเข้าถึงได้
+  // Declare variables outside the try block so the catch block can access them.
+  let events: any[] = [];
+
   try {
     await fetchMessagesFromFirestore(STORE_ID);
 
@@ -173,7 +181,7 @@ export async function POST(request: NextRequest) {
       return new NextResponse("Signature validation failed!", { status: 401 });
     }
 
-    const events = JSON.parse(body).events;
+    events = JSON.parse(body).events; // กำหนดค่าให้ตัวแปรที่อยู่นอก scope
     for (const event of events) {
       if (event.type === 'message' && event.message.type === 'text' && event.source.userId) {
         const userId = event.source.userId; 
@@ -230,7 +238,8 @@ export async function POST(request: NextRequest) {
                     if (machineConfigData.is_active) {
                         await startTimer(userId, STORE_ID, 'washer', machineConfigData.machine_id, machineConfigData.duration_minutes, machineConfigData.display_name, replyToken);
                     } else {
-                        await replyMessage(replyToken, messageTemplatesMap.get('machine_inactive')?.replace('{display_name}', machineConfigData.display_name) || 'เครื่องปิดใช้งานอยู่');
+                        const inactiveMessage = messageTemplatesMap.get('machine_inactive') || 'เครื่อง {display_name} กำลังปิดใช้งานอยู่ค่ะ';
+                        await replyMessage(replyToken, inactiveMessage.replace('{display_name}', machineConfigData.display_name));
                     }
                 } else {
                     await replyMessage(replyToken, messageTemplatesMap.get('machine_not_found') || 'ไม่พบหมายเลขเครื่องซักผ้า');
@@ -250,7 +259,8 @@ export async function POST(request: NextRequest) {
                     if (machineConfigData.is_active) {
                         await startTimer(userId, STORE_ID, 'dryer', machineConfigData.machine_id, machineConfigData.duration_minutes, machineConfigData.display_name, replyToken);
                     } else {
-                         await replyMessage(replyToken, messageTemplatesMap.get('machine_inactive')?.replace('{display_name}', machineConfigData.display_name) || 'เครื่องปิดใช้งานอยู่');
+                        const inactiveMessage = messageTemplatesMap.get('machine_inactive') || 'เครื่อง {display_name} กำลังปิดใช้งานอยู่ค่ะ';
+                        await replyMessage(replyToken, inactiveMessage.replace('{display_name}', machineConfigData.display_name));
                     }
                 } else {
                     await replyMessage(replyToken, messageTemplatesMap.get('machine_not_found') || 'ไม่พบเครื่องอบผ้า');
@@ -276,15 +286,17 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error("Error in webhook handler:", error);
     
-    // ===================================================================================
-    // FINAL FIX: Changed to @ts-expect-error as requested by the Vercel build log
-    // @ts-expect-error 
-    const fallbackReplyToken = (request.body as any)?.events?.[0]?.replyToken;
-    // ===================================================================================
-
+    // ดึง replyToken จาก event แรกเป็น fallback ในกรณีที่เกิด error
+    // Safely get the fallback reply token from the first event if an error occurs.
+    const fallbackReplyToken = events?.[0]?.replyToken;
+    
     if (fallbackReplyToken) {
-        await replyMessage(fallbackReplyToken, messageTemplatesMap.get('generic_error') || 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่ออีกครั้ง');
+        await replyMessage(fallbackReplyToken, messageTemplatesMap.get('generic_error') || 'ขออภัยค่ะ เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่อีกครั้ง');
     }
+    
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
+// ===================================================================================
+// END: CODE FIX AREA
+// ===================================================================================
