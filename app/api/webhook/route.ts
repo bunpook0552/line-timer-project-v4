@@ -225,25 +225,27 @@ export async function POST(request: NextRequest) {
                 await replyMessage(replyToken, 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องซักผ้าว่าง');
             }
 
-        } else if (userMessage === "อบผ้า") {
-            const machineConfigsCol = db.collection('stores').doc(STORE_ID).collection('machine_configs');
-            const q = machineConfigsCol.where('machine_type', '==', 'dryer').where('is_active', '==', true);
-            const machineSnapshot = await q.get();
+} else if (userMessage === "อบผ้า") {
+    const machineConfigsCol = db.collection('stores').doc(STORE_ID).collection('machine_configs');
+    const q = machineConfigsCol.where('machine_type', '==', 'dryer').where('is_active', '==', true);
+    const machineSnapshot = await q.get();
 
-            const dryerButtons: QuickReplyItem[] = machineSnapshot.docs.map(doc => {
-                const data = doc.data();
-                return {
-                    type: 'action',
-                    action: { type: 'message', label: `${data.duration_minutes} นาที`, text: `อบผ้า_เลือก_${data.machine_id}` }
-                };
-            });
+    const dryerButtons: QuickReplyItem[] = machineSnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+            type: 'action',
+            // แก้ไข label ให้เป็น display_name หรือ "เครื่องอบผ้า #[id]"
+            action: { type: 'message', label: data.display_name, text: `อบผ้า_เลือก_${data.machine_id}` }
+        };
+    });
 
-            if (dryerButtons.length > 0) {
-                await replyMessage(replyToken, 'กรุณาเลือกเวลาสำหรับเครื่องอบผ้าค่ะ', dryerButtons);
-            } else {
-                await replyMessage(replyToken, 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องอบผ้าว่าง');
-            }
-        } 
+    if (dryerButtons.length > 0) {
+        // แก้ไขข้อความให้ถูกต้อง
+        await replyMessage(replyToken, 'กรุณาเลือกเครื่องอบผ้าค่ะ', dryerButtons);
+    } else {
+        await replyMessage(replyToken, 'ขออภัยค่ะ ขณะนี้ไม่มีเครื่องอบผ้าว่าง');
+    }
+} 
         else if (userMessage.startsWith("ซักผ้า_เลือก_")) {
             const requestedMachineId = parseInt(userMessage.replace('ซักผ้า_เลือก_', ''), 10);
             if (!isNaN(requestedMachineId)) {
